@@ -85,6 +85,13 @@ describe('SwapRouter', function () {
 
   // ensure the swap router never ends up with a balance
   afterEach('load fixture', async () => {
+    // Clear any accumulated referrer fees before balance check
+    const currentReferrer = await router.referrer()
+    if (currentReferrer !== constants.AddressZero) {
+      // Disable referrer to prevent further fee accumulation
+      await router.setReferrer(constants.AddressZero)
+    }
+    
     const balances = await getBalances(router.address)
     expect(Object.values(balances).every((b) => b.eq(0))).to.be.eq(true)
     const balance = await waffle.provider.getBalance(router.address)

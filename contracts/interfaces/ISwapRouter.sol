@@ -64,4 +64,40 @@ interface ISwapRouter is IUniswapV3SwapCallback {
     /// @param params The parameters necessary for the multi-hop swap, encoded as `ExactOutputParams` in calldata
     /// @return amountIn The amount of the input token
     function exactOutput(ExactOutputParams calldata params) external payable returns (uint256 amountIn);
+
+    // Referrer functionality
+
+    /// @notice Returns current referrer configuration
+    /// @return referrerAddress Current referrer address
+    /// @return feeBasisPoints Current fee in basis points
+    function getReferrerConfig() external view returns (address referrerAddress, uint24 feeBasisPoints);
+
+    /// @notice Sets referrer address (owner only)
+    /// @param _referrer New referrer address
+    function setReferrer(address _referrer) external;
+
+    /// @notice Sets referrer fee rate (owner only)  
+    /// @param _feeBasisPoints Fee rate in basis points
+    function setReferrerFee(uint24 _feeBasisPoints) external;
+
+    /// @notice Calculate referrer fee for given amount
+    /// @param amount Input amount
+    /// @return fee Referrer fee amount
+    function calculateReferrerFee(uint256 amount) external view returns (uint256 fee);
+
+    /// @notice Returns accumulated referrer fees for a referrer and token
+    /// @param referrer Referrer address
+    /// @param token Token address
+    /// @return amount Accumulated fee amount
+    function referrerFees(address referrer, address token) external view returns (uint256 amount);
+
+    /// @notice Collect accumulated referrer fees for a specific token
+    /// @param token Token address to collect fees for
+    /// @return amount Amount of fees collected
+    function collectReferrerFees(address token) external returns (uint256 amount);
+
+    /// @notice Collect accumulated referrer fees for multiple tokens
+    /// @param tokens Array of token addresses to collect fees for
+    /// @return amounts Array of amounts collected for each token
+    function collectReferrerFeesMultiple(address[] calldata tokens) external returns (uint256[] memory amounts);
 }
