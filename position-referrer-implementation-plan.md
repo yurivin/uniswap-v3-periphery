@@ -37,7 +37,7 @@ struct Position {
     uint128 tokensOwed0;
     uint128 tokensOwed1;
     address positionManager;     // NEW: Position manager (set once at creation, immutable)
-    uint24 referrerFeeRate;      // NEW: Fee rate in basis points (0-500, 5% max)
+    uint24 referrerFeeRate;      // NEW: Fee rate in basis points (0-10000, 100% max)
 }
 ```
 
@@ -53,8 +53,11 @@ mapping(address => uint24) public positionManagerReferrerFeeRates;
 function setPositionManagerReferrer(address referrer) external;
 
 /// @notice Set referrer fee rate for position manager  
-/// @param feeRate Fee rate in basis points (0-500, max 5%)
-function setPositionManagerReferrerFeeRate(uint24 feeRate) external;
+/// @param feeRate Fee rate in basis points (0-10000, max 100%)
+function setPositionManagerReferrerFeeRate(uint24 feeRate) external {
+    require(feeRate <= 10000, "Fee rate exceeds 100%");
+    // Implementation...
+}
 
 /// @notice Get position manager configuration
 /// @param positionManager Position manager address
@@ -198,28 +201,108 @@ event PositionManagerReferrerFeesCollectedMultiple(
 
 ## Implementation Phases
 
-### Phase 1: Core Infrastructure
-1. Enhance Position struct with positionManager and referrerFeeRate fields
-2. Add position manager configuration functions
-3. Implement fee accumulation storage
-4. Update mint function to set position manager data
+### Phase 1: Core Infrastructure (Tasks 1-4)
 
-### Phase 2: Fee Collection System
-1. Implement collectPositionManagerReferrerFees() function
-2. Add batch collection function for multiple tokens
-3. Add view functions for fee queries
-4. Implement proper event emission
+**Task 1: Enhance Position Struct**
+- Add `positionManager` field (address, immutable after creation)
+- Add `referrerFeeRate` field (uint24, 0-10000 basis points for 0-100%)
+- Optimize storage packing to minimize gas costs
+- Update Position struct documentation
 
-### Phase 3: Pool Integration
-1. Modify pool contract fee calculation to extract position manager referrer fees
-2. Integrate with existing fee growth tracking
-3. Ensure proper fee accumulation in NonFungiblePositionManager
+**Task 2: Position Manager Configuration Functions**
+- Implement `setPositionManagerReferrer(address referrer)` function
+- Implement `setPositionManagerReferrerFeeRate(uint24 feeRate)` function with validation
+- Add validation: `require(feeRate <= 10000, "Fee rate exceeds 100%")`
+- Restrict access to position manager only (msg.sender validation)
 
-### Phase 4: Testing and Optimization
-1. Comprehensive unit tests for all new functionality
-2. Integration tests with existing position management
-3. Gas optimization analysis
-4. Security audit preparation
+**Task 3: Fee Accumulation Storage**
+- Implement `mapping(address => mapping(address => uint256)) positionManagerReferrerFees`
+- Storage pattern: positionManager => token => accumulated amount
+- Follow existing fee storage patterns for consistency
+- Initialize storage mappings properly
+
+**Task 4: Enhanced Mint Function**
+- Read position manager configuration during mint
+- Set `position.positionManager = msg.sender` (immutable)
+- Set `position.referrerFeeRate` from manager's configuration
+- Emit `PositionCreated` event with tracking data
+
+### Phase 2: Fee Collection System (Tasks 5-8)
+
+**Task 5: Single Token Fee Collection**
+- Implement `collectPositionManagerReferrerFees(address token)` function
+- Validate caller permissions and accumulated fee amounts
+- Transfer fees to position manager (msg.sender)
+- Clear accumulated fees after successful transfer
+- Follow secure transfer patterns
+
+**Task 6: Batch Fee Collection**
+- Implement `collectPositionManagerReferrerFeesMultiple(address[] tokens)` function
+- Optimize gas usage for multiple token collections
+- Return array of collected amounts
+- Handle partial failures gracefully
+
+**Task 7: View Functions**
+- Implement `getPositionManagerConfig(address manager)` returns (address referrer, uint24 feeRate)
+- Implement `getPositionManagerReferrerFees(address manager, address token)` returns accumulated fees
+- Add helper functions for position manager queries
+- Ensure efficient gas usage for read operations
+
+**Task 8: Event System**
+- Implement `PositionCreated(tokenId, positionManager, referrerFeeRate)` event
+- Implement `PositionManagerReferrerSet(positionManager, referrer)` event  
+- Implement `PositionManagerReferrerFeeRateSet(positionManager, feeRate)` event
+- Implement `PositionManagerReferrerFeesCollected(positionManager, token, amount)` event
+- Implement `PositionManagerReferrerFeesCollectedMultiple(positionManager, tokens[], amounts[])` event
+
+### Phase 3: Pool Integration (Tasks 9-11)
+
+**Task 9: Pool Contract Fee Extraction**
+- Modify pool contract swap fee calculations
+- Extract position manager referrer fees during swap processing
+- Calculate fees based on position's referrerFeeRate
+- Integrate with existing protocol fee extraction patterns
+
+**Task 10: Fee Growth Tracking Integration**
+- Integrate with existing `feeGrowthGlobal0X128` mechanisms
+- Ensure proper fee distribution after referrer fee extraction
+- Maintain compatibility with existing fee growth calculations
+- Preserve LP fee calculation accuracy
+
+**Task 11: Fee Accumulation During Swaps**
+- Implement fee accumulation in NonFungiblePositionManager contract
+- Call accumulation from pool contracts during swaps
+- Ensure proper token routing and accumulation
+- Handle multiple positions affected by single swap
+
+### Phase 4: Testing and Optimization (Tasks 12-15)
+
+**Task 12: Comprehensive Unit Testing**
+- Test position manager configuration functions
+- Test position creation with referrer tracking
+- Test fee collection (single and batch)
+- Test edge cases and error conditions
+- Test 0% and 100% fee rate scenarios
+
+**Task 13: Integration Testing**
+- Test integration with existing position management (mint, increase, decrease, collect, burn)
+- Test interaction with protocol fees and SwapRouter referrer fees
+- Test gas costs and performance impact
+- Ensure backwards compatibility
+
+**Task 14: Gas Optimization**
+- Analyze storage packing efficiency
+- Optimize batch operations
+- Implement lazy loading where appropriate
+- Benchmark against existing operations
+- Target <25k gas overhead per operation
+
+**Task 15: Security and Audit Preparation**
+- Security review of all new functions
+- Reentrancy analysis and protection
+- Access control validation
+- Fee calculation accuracy verification
+- Prepare comprehensive audit documentation
 
 ## Gas Optimization Strategies
 
@@ -230,7 +313,7 @@ event PositionManagerReferrerFeesCollectedMultiple(
 
 ## Security Considerations
 
-1. **Fee Rate Limits**: Maximum 5% referrer fee rate (500 basis points)
+1. **Fee Rate Limits**: Maximum 100% referrer fee rate (10000 basis points)
 2. **Self-Management**: Position managers control their own configuration
 3. **Immutable Associations**: Position manager cannot be changed after creation
 4. **Reentrancy Protection**: Use existing patterns from collect() function

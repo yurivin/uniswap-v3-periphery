@@ -118,14 +118,14 @@ describe('Position Manager Referrer Fee System', () => {
     })
 
     it('reverts when fee rate exceeds maximum', async () => {
-      await expect(nft.connect(positionManager1).setPositionManagerReferrerFeeRate(501)) // 5.01% > 5% max
-        .to.be.revertedWith('Fee rate too high')
+      await expect(nft.connect(positionManager1).setPositionManagerReferrerFeeRate(10001)) // 100.01% > 100% max
+        .to.be.revertedWith('Fee rate exceeds 100%')
     })
 
     it('allows maximum fee rate', async () => {
-      await nft.connect(positionManager1).setPositionManagerReferrerFeeRate(500) // 5% max
+      await nft.connect(positionManager1).setPositionManagerReferrerFeeRate(10000) // 100% max
       const config = await nft.getPositionManagerConfig(positionManager1.address)
-      expect(config.feeRate).to.eq(500)
+      expect(config.feeRate).to.eq(10000)
     })
 
     it('only position manager can set their own configuration', async () => {
@@ -141,6 +141,15 @@ describe('Position Manager Referrer Fee System', () => {
     beforeEach('configure position manager', async () => {
       await nft.connect(positionManager1).setPositionManagerReferrer(referrer1.address)
       await nft.connect(positionManager1).setPositionManagerReferrerFeeRate(250) // 2.5%
+    })
+
+    it('allows 100% fee rate for full position manager control', async () => {
+      await nft.connect(positionManager2).setPositionManagerReferrer(referrer2.address)
+      await nft.connect(positionManager2).setPositionManagerReferrerFeeRate(10000) // 100%
+      
+      const config = await nft.getPositionManagerConfig(positionManager2.address)
+      expect(config.referrer).to.eq(referrer2.address)
+      expect(config.feeRate).to.eq(10000)
     })
 
     it('mint creates position with position manager and fee rate', async () => {

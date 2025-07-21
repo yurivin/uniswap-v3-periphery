@@ -54,14 +54,15 @@ The idea is to give position manager referrers a portion of the fees that would 
 Total Swap Fees (100%)
 ├── Protocol Fee (0-1/255 of total) - Extracted first during swap
 ├── Swap Referrer Fee (if implemented) - Extracted from swap input  
-├── Position Manager Referrer Fee (NEW) - Extracted from LP fees (max 5% of LP portion)
+├── Position Manager Referrer Fee (NEW) - Extracted from LP fees (max 100% of LP portion)
 └── Liquidity Provider Fee (remainder) - Distributed to positions
 ```
 
 **Position Manager Referrer Fee Details:**
 - **Extracted from**: LP fees that would go to positions created by position managers
-- **Maximum rate**: 5% of LP fees earned by the specific position  
-- **Example**: Position earns 100 USDC in LP fees → Position manager gets 5 USDC (5%) → Position owner gets 95 USDC
+- **Maximum rate**: 100% of LP fees earned by the specific position  
+- **Example 1**: Position earns 100 USDC in LP fees, 5% rate → Position manager gets 5 USDC → Position owner gets 95 USDC
+- **Example 2**: Position earns 100 USDC in LP fees, 100% rate → Position manager gets 100 USDC → Position owner gets 0 USDC
 - **Storage pattern**: `mapping(address => mapping(address => uint256)) positionManagerReferrerFees` (follows existing patterns)
 - **Collection pattern**: Separate `collectPositionManagerReferrerFees()` function (follows existing patterns)
 
@@ -238,7 +239,7 @@ The Uniswap V3 fee distribution mechanism can be extended to support position ma
 - **Economic viability**: Break-even at very low referrer fee rates
 
 ### ✅ **ECONOMIC IMPLICATIONS - BALANCED**
-- **Clear fee source**: 5% maximum of LP fees earned by specific positions
+- **Clear fee source**: Up to 100% of LP fees earned by specific positions (configurable per position manager)
 - **Transparent impact**: Position owners see exactly what portion goes to position manager
 - **Incentive alignment**: Encourages position manager ecosystem growth
 - **LP protection**: Majority of fees (95%+) still go to liquidity providers
@@ -332,7 +333,7 @@ The Uniswap V3 fee distribution mechanism can be extended to support position ma
 1. **Technical Feasibility**: ✅ Perfect alignment with existing fee patterns
 2. **Implementation Complexity**: ✅ Moderate - follows established patterns  
 3. **Gas Implications**: ✅ Reasonable overhead consistent with other fee types
-4. **Economic Impact**: ✅ Clear 5% maximum of LP fees with transparent calculation
+4. **Economic Impact**: ✅ Configurable 0-100% of LP fees with transparent calculation
 
 ### **Recommended Approach:**
 
