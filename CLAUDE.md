@@ -92,10 +92,29 @@ Contracts use a modular inheritance pattern with base contracts in `contracts/ba
 
 Key libraries in `contracts/libraries/`:
 - `Path.sol` - Encodes/decodes swap paths for multi-hop swaps
-- `PoolAddress.sol` - Computes pool addresses deterministically
-- `CallbackValidation.sol` - Validates callbacks from core pools
+- `PoolAddress.sol` - Computes pool addresses deterministically using CREATE2
+- `CallbackValidation.sol` - Validates callbacks from core pools to prevent attacks
 - `LiquidityAmounts.sol` - Calculates token amounts for liquidity operations
 - `PositionKey.sol` - Generates keys for liquidity positions
+
+### Core Pool Integration
+
+The periphery contracts integrate seamlessly with Uniswap V3 Core pools through:
+
+**Direct Pool Operations:**
+- `NonfungiblePositionManager` calls core pool functions: `mint()`, `burn()`, `collect()`, `positions()`
+- `SwapRouter` uses pool's `swap()` function with callback validation
+- All pool addresses computed deterministically via `PoolAddress.computeAddress()`
+
+**Secure Callback System:**
+- Periphery contracts implement core callback interfaces (`IUniswapV3MintCallback`, `IUniswapV3SwapCallback`)
+- `CallbackValidation.verifyCallback()` ensures only authentic pools can trigger callbacks
+- Prevents callback-based attacks by validating `msg.sender` matches computed pool address
+
+**Fee Growth Synchronization:**
+- Position manager syncs with pool's fee growth trackers (`feeGrowthInside0LastX128`, `feeGrowthInside1LastX128`)
+- Uses core libraries (`FullMath`, `FixedPoint128`) for precise fee calculations
+- Maintains position state consistency with underlying pool state
 
 ## Development Notes
 
