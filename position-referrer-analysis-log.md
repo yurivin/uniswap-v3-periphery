@@ -1,7 +1,12 @@
-# Position Manager Referrer System - Analysis and Evolution Log
+# NonfungiblePositionManager Referrer System - Analysis and Evolution Log
 
 ## Document Purpose
-This document serves as a historical log of the evolution of the Position Manager Referrer System design, capturing all approaches considered and decisions made during the analysis process.
+This document serves as a historical log of the evolution of the NonfungiblePositionManager Referrer System design, capturing all approaches considered and decisions made during the analysis process.
+
+## Key Terminology Evolution
+- **Position Manager** = NonfungiblePositionManager contract address (not EOA)
+- **Multi-Contract Architecture** = Multiple independent NonfungiblePositionManager contracts with separate configurations
+- **Contract Authorization** = Only original NonfungiblePositionManager contract can modify positions it created
 
 ## Design Evolution Timeline
 
@@ -50,16 +55,30 @@ This document serves as a historical log of the evolution of the Position Manage
 
 ### Phase 6: Pool-Centric Architecture (Final)
 **Key Evolution**:
-- **Pool-centric fee handling**: Pools store and manage all position manager referrer fees
+- **Pool-centric fee handling**: Pools store and manage all NonfungiblePositionManager contract referrer fees
 - **No cross-contract calls**: Eliminated external calls during swaps
 - **Protocol fee pattern**: Follows exact same pattern as existing protocol fees
-- **Multiple position managers**: Each pool supports multiple position managers independently
-- **Direct collection**: Position managers collect directly from pools
+- **Multiple contracts**: Each pool supports multiple NonfungiblePositionManager contracts independently
+- **Direct collection**: NonfungiblePositionManager contracts collect directly from pools
 - **No recipient parameter**: Fees always go to configured referrer for security
+
+### Phase 7: Instance Variable Architecture (Latest)
+**Key Evolution**:
+- **Instance variables**: Each NonfungiblePositionManager contract has its own referrer and fee rate (not mappings)
+- **Contract address tracking**: Positions store which NonfungiblePositionManager contract created them
+- **Admin fee collection**: Admin calls NonfungiblePositionManager → Contract calls Pool → Pool sends to Referrer
+- **Single pool collection**: Multi-pool collection handled off-chain
+- **Contract authorization**: Only original NonfungiblePositionManager contract can modify positions
+
+### Phase 8: Function Naming Simplification (Latest)
+**Key Evolution**:
+- **Simplified function names**: `collectPositionManagerFee()` instead of `collectPositionManagerReferrerFees()`
+- **Consistent naming**: Removed "Referrer" from function names for brevity
+- **Singular "Fee"**: Changed from "Fees" to "Fee" for consistency
 
 ## Outdated Design Elements (Historical Reference)
 
-### Factory-Level Whitelist System (Removed)
+### Factory-Level Whitelist System (Removed - Phase 2-4)
 ```solidity
 // OUTDATED - Factory whitelist approach (removed from final design)
 mapping(address => bool) public whitelistedPositionManagers;
@@ -70,7 +89,7 @@ function removePositionManagerFromWhitelist(address positionManager) external;
 function isPositionManagerWhitelisted(address positionManager) external view returns (bool);
 ```
 
-### Collection-Time Fee Extraction (Rejected)
+### Collection-Time Fee Extraction (Rejected - Phase 3)
 ```solidity
 // OUTDATED - Collection-time fee extraction (rejected approach)
 function collect(CollectParams calldata params) external payable returns (uint256 amount0, uint256 amount1) {
@@ -82,7 +101,37 @@ function collect(CollectParams calldata params) external payable returns (uint25
 }
 ```
 
-### Pool Contract Validation (Removed)
+### Pool Contract Validation (Removed - Phase 4-5)
+
+### Mapping-Based Configuration (Removed - Phase 7)
+```solidity
+// OUTDATED - Mapping-based configuration (replaced with instance variables)
+mapping(address => address) public positionManagerReferrers;
+mapping(address => uint24) public positionManagerFeeRates;
+
+function setPositionManagerReferrer(address referrer) external {
+    positionManagerReferrers[msg.sender] = referrer;
+}
+// ISSUES: Complex cross-contract queries, gas inefficient
+```
+
+### Multi-Pool Collection Function (Removed - Phase 8)
+```solidity
+// OUTDATED - Multi-pool collection (moved to off-chain)
+function collectFeesFromPools(address[] calldata poolAddresses)
+    external
+    onlyOwner
+    returns (uint128[] memory amounts0, uint128[] memory amounts1);
+// REASON: Off-chain functionality, simpler single-pool approach
+```
+
+### Direct Admin Pool Calls (Corrected - Phase 7)
+```solidity
+// OUTDATED - Admin calling pool directly (corrected)
+pool.collectPositionManagerFee(); // Called by admin
+// ISSUE: Admin is not NonfungiblePositionManager contract address
+// CORRECTED: Admin → NonfungiblePositionManager → Pool
+```
 ```solidity
 // OUTDATED - Pool-level position manager validation (removed)
 function validatePositionManager() external view returns (bool) {
@@ -95,36 +144,46 @@ event PositionModifiedByManager(address indexed positionManager, ...);
 
 ## Final Architecture Summary
 
-### Core Components
-1. **Position Struct Enhancement**: Track position manager and referrer fee rate (in periphery)
-2. **Self-Managed Configuration**: Position managers configure themselves (in periphery)
-3. **Pool-Centric Fee Storage**: Pools store position manager referrer fees (like protocol fees)
+### Core Components (Final Architecture)
+1. **Position Struct Enhancement**: Track NonfungiblePositionManager contract address and referrer fee rate (in periphery)
+2. **Instance Variable Configuration**: Each NonfungiblePositionManager contract has its own referrer and fee rate
+3. **Pool-Centric Fee Storage**: Pools store fees per NonfungiblePositionManager contract (like protocol fees)
 4. **Swap-Time Fee Extraction**: Extract fees during swap calculations (in pools)
-5. **Direct Pool Collection**: Position managers collect directly from pools (like collectProtocol)
-6. **Unchanged LP Flow**: collect() function remains completely unchanged
+5. **Admin-Triggered Collection**: Admin → NonfungiblePositionManager → Pool → Referrer flow
+6. **Contract Authorization**: Only original NonfungiblePositionManager contract can modify positions
+7. **Unchanged LP Flow**: collect() function remains completely unchanged
 
-### Key Design Principles
+### Key Design Principles (Final)
 - **Follow existing patterns**: Mirror protocol fee patterns exactly
 - **Pool-centric design**: All fee logic handled within pools
-- **Self-governance**: No central authority or whitelist required
+- **Multi-contract architecture**: Support multiple independent NonfungiblePositionManager contracts
+- **Instance variable configuration**: Each contract manages its own configuration
+- **Contract authorization**: Only original contract can modify positions it created
+- **Admin-controlled collection**: Admin triggers fee collection to configured referrer
 - **No cross-contract calls**: Eliminate external calls during swaps
-- **Multiple position managers**: Support many position managers per pool
-- **Security-first**: Fees always go to configured referrer
+- **Security-first**: Fees always go to configured referrer, no redirection possible
 - **Gas efficiency**: Minimal overhead, leverage existing mechanisms
+- **Single pool collection**: Multi-pool handled off-chain for simplicity
 
 ## Lessons Learned
 
 ### Design Decisions
 1. **Consistency is key**: Following existing protocol patterns reduces complexity and risk
 2. **Avoid modification**: Don't change existing functions; add new ones instead
-3. **Self-management**: Simplify by removing central control mechanisms
+3. **Contract-level management**: Each contract manages its own configuration independently
 4. **Immediate vs delayed**: Immediate fee accumulation is better than delayed extraction
+5. **Instance variables vs mappings**: Instance variables are simpler and more gas-efficient
+6. **Admin flow clarity**: Clear separation between admin trigger and actual fee transfer
+7. **Authorization by contract address**: More secure than user-level authorization
 
 ### Technical Insights
-1. **Protocol fees as model**: The protocol fee mechanism provides the best pattern for position manager fees
+1. **Protocol fees as model**: The protocol fee mechanism provides the best pattern for NonfungiblePositionManager fees
 2. **Swap-time extraction**: More complex but better user experience and consistency
 3. **Accumulation pattern**: The accumulate-then-collect pattern is proven and secure
-4. **Storage optimization**: Leverage existing patterns to minimize gas costs
+4. **Storage optimization**: Instance variables more efficient than mappings for single-contract configuration
+5. **Contract address tracking**: Enables proper authorization and fee attribution
+6. **Admin-triggered collection**: Provides control while maintaining security of fee destination
+7. **Function naming**: Shorter names improve readability and reduce gas costs
 
 ### Pool-Centric Fee Handling (Final)
 ```solidity

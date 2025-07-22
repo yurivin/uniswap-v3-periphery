@@ -1,25 +1,37 @@
-# Position Manager Referrer Fee Implementation Plan
+# NonfungiblePositionManager Referrer Fee Implementation Plan
 
 ## Overview
-This document outlines the implementation plan for adding position manager referrer fee functionality to the Uniswap V3 NonFungiblePositionManager contract. The system extracts referrer fees during swap fee calculations (like protocol fees) and provides economic incentives for position management operations.
+This document outlines the implementation plan for adding referrer fee functionality to Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create. Referrer fees are extracted during swap fee calculations (like protocol fees) and provide economic incentives for position management services.
+
+## Terminology
+
+- **Position Manager**: A deployed NonfungiblePositionManager contract address (not an EOA)
+- **Original Position Manager**: The specific NonfungiblePositionManager contract that created a position
+- **Referrer**: The address configured to receive referrer fees (can be EOA or contract)
+- **Position Owner**: The user who owns the NFT position token
+- **Multi-Contract Architecture**: Multiple NonfungiblePositionManager contracts can operate independently with different referrer configurations
 
 ## Architecture Summary
 
 ### Core Components
-1. **Hybrid Storage Pattern**: Position manager referrer fees stored in pools like protocol fees (multiple managers per pool)
-2. **Position Fee Integration**: Extract referrer fees during existing position fee calculations (no separate functions)
-3. **Position Manager Tracking**: Each position tracks which manager created it (immutable)
-4. **Self-Managed Configuration**: Position managers configure their own referrer addresses and fee rates
-5. **Direct Pool Collection**: Position managers collect directly from pools like `collectProtocol()`
-6. **Unchanged LP Flow**: `collect()` function remains completely unchanged for position owners
+1. **Multi-Contract Architecture**: Multiple independent NonfungiblePositionManager contracts can operate with different referrer configurations
+2. **Hybrid Storage Pattern**: Referrer fees stored in pools like protocol fees (separate accumulation per NonfungiblePositionManager contract)
+3. **Position Fee Integration**: Extract referrer fees during existing position fee calculations (no separate functions)
+4. **Contract-Level Tracking**: Each position tracks which NonfungiblePositionManager contract created it (immutable)
+5. **Self-Managed Configuration**: Each NonfungiblePositionManager contract configures its own referrer address and fee rate
+6. **Direct Pool Collection**: NonfungiblePositionManager contracts collect directly from pools like `collectProtocol()`
+7. **Contract Authorization**: Only the original NonfungiblePositionManager contract can modify positions it created
+8. **Unchanged LP Flow**: `collect()` function remains completely unchanged for position owners
 
 ### Key Features
+- **Multi-Contract Support**: Multiple NonfungiblePositionManager contracts operate independently
+- **Contract-Based Configuration**: Each NonfungiblePositionManager contract sets its own referrer and fee rate
 - **Hybrid Pattern**: Combines protocol fee storage with position fee calculation integration
-- **Pool-Centric Storage**: Multiple position managers store fees per pool (like protocol fees)
+- **Pool-Centric Storage**: Separate fee accumulation per NonfungiblePositionManager contract per pool
 - **Position Fee Integration**: Referrer fees extracted during existing position fee calculations
-- **Direct Collection**: Position managers collect from pools like `collectProtocol()`
-- **Self-Managed Configuration**: Position managers set their own referrer addresses and fee rates
-- **Position Manager Authorization**: Only the original position manager can modify their positions
+- **Direct Collection**: NonfungiblePositionManager contracts collect from pools like `collectProtocol()`
+- **Contract Authorization**: Only the original NonfungiblePositionManager contract can modify positions it created
+- **Cross-Contract Security**: Prevents unauthorized access between different contract deployments
 - **Unchanged collect() Function**: Position owners collect LP fees normally, completely unchanged
 - **Gas Efficient**: No separate fee extraction functions, integrates into existing calculations
 - **Backwards Compatible**: Existing positions work unchanged, new positions can opt into referrer fees
@@ -45,7 +57,140 @@ This document outlines the implementation plan for adding position manager refer
 1. **Enhance, don't duplicate** - Update existing functions to add new capabilities
 2. **Separate concerns** - New functionality gets new functions
 3. **Preserve existing behavior** - LP functions work exactly as before
-4. **Position manager authorization** - Only original position manager can modify their positions
+4. **NonfungiblePositionManager contract authorization** - Only original position manager can modify their positions
+
+## Complete User Flow Documentation
+
+**Key Definitions:**
+- **Position Manager** = NonfungiblePositionManager contract address (not EOA)
+- **Original Position Manager** = The specific NonfungiblePositionManager contract that created the position
+- **Authorization** = Pool verifies operations come through the original NonfungiblePositionManager contract
+
+The position manager referrer fee system involves 9 key user flows:
+
+### **Flow 1: NonfungiblePositionManager Configuration**
+```
+1. Admin/Owner calls setPositionManagerReferrer(referrerAddress) → NonfungiblePositionManager contract
+2. Admin/Owner calls setPositionManagerFeeRate(feeRate) → NonfungiblePositionManager contract
+3. Configuration stored in NonfungiblePositionManager contract storage
+4. This configuration applies to ALL positions created through this specific contract
+5. Emit PositionManagerReferrerSet and PositionManagerFeeRateSet events
+```
+
+### **Flow 2: Position Creation through NonfungiblePositionManager**
+```
+1. User calls mint(params) → NonfungiblePositionManager contract (periphery)
+2. NonfungiblePositionManager reads its own configuration (referrer, fee rate)
+3. NonfungiblePositionManager calls pool.mint(..., address(this), referrerFeeRate) → UniswapV3Pool (core)
+   - address(this) = the NonfungiblePositionManager contract address
+4. Core pool.mint() calls _updatePosition(..., nftManagerAddress, referrerFeeRate)
+5. _updatePosition() extracts referrer fees and stores them for nftManagerAddress
+6. Position created with positionManager = NonfungiblePositionManager contract address
+7. Pool tracks which NonfungiblePositionManager contract created each position
+8. Emit PositionCreated event
+```
+
+### **Flow 3: Position Updates through Original NonfungiblePositionManager**
+```
+1. User calls increaseLiquidity(params) or decreaseLiquidity(params) → NonfungiblePositionManager
+2. NonfungiblePositionManager loads stored position data
+3. NonfungiblePositionManager calls pool operation → UniswapV3Pool
+4. Pool checks: require(positions[positionKey].positionManager == msg.sender)
+   - Only the original NonfungiblePositionManager contract can modify the position
+5. Core pool calls _updatePosition() with NonfungiblePositionManager address and fee rate
+6. _updatePosition() extracts referrer fees for this NonfungiblePositionManager
+7. Additional referrer fees accumulated in pool storage
+8. Position updated
+```
+
+### **Flow 4: Referrer Fee Calculation & Storage (During Any Swap)**
+```
+1. User performs swap → UniswapV3Pool.swap()
+2. Swap triggers fee calculations and position updates
+3. For each affected position: _updatePosition(..., nftManagerAddress, referrerFeeRate) called
+4. Pool uses the NonfungiblePositionManager address stored in the position
+5. IF nftManagerAddress != address(0) AND referrerFeeRate > 0:
+   a. Calculate referrer fees: (positionLPFees * referrerFeeRate) / 10000
+   b. Accumulate in positionManagerFees[nftManagerAddress]
+   c. Reduce position owner fees by referrer amount
+6. Fees accumulated per NonfungiblePositionManager contract address
+```
+
+### **Flow 5: NonfungiblePositionManager Fee Withdrawal**
+```
+1. Admin/Owner calls NonfungiblePositionManager.collectFeesFromPool(poolAddress) → NonfungiblePositionManager (periphery)
+2. NonfungiblePositionManager verifies caller is contract owner (onlyOwner modifier)
+3. NonfungiblePositionManager calls pool.collectPositionManagerFee() → UniswapV3Pool (core)
+   - msg.sender = NonfungiblePositionManager contract address
+4. Pool identifies caller as NonfungiblePositionManager contract (msg.sender)
+5. Pool calls INonfungiblePositionManager(msg.sender).positionManagerReferrer()
+   - Pool queries the calling NonfungiblePositionManager for its referrer
+6. Pool gets referrer address from the NonfungiblePositionManager contract
+7. require(referrer != address(0), "No referrer configured")
+8. Pool reads accumulated fees: positionManagerFees[msg.sender]
+9. Pool transfers accumulated fees directly to referrer:
+   a. IF token0 amount > 0: transfer token0 to referrer, clear storage
+   b. IF token1 amount > 0: transfer token1 to referrer, clear storage
+10. Pool clears accumulated fees for this NonfungiblePositionManager contract
+11. Pool returns (amount0, amount1) to NonfungiblePositionManager
+12. NonfungiblePositionManager returns (amount0, amount1) to admin
+13. Emit CollectPositionManagerFee(nftManagerAddress, referrer, amount0, amount1)
+```
+
+**Key Points for Fee Withdrawal:**
+- Admin/Owner calls NonfungiblePositionManager, which then calls pool
+- Admin cannot call pool directly (requires msg.sender == NonfungiblePositionManager contract)
+- Fees go directly to the referrer configured in that NonfungiblePositionManager
+- Admin triggers collection but never receives fees directly
+- Each NonfungiblePositionManager contract has its own referrer and fee accumulation
+- Multiple NonfungiblePositionManager contracts can operate independently
+- Admin must call collectFeesFromPool() on each pool separately for multi-pool collection
+
+### **Flow 6: Position Deletion through Original NonfungiblePositionManager**
+```
+1. User calls burn(tokenId) → NonfungiblePositionManager contract
+2. NonfungiblePositionManager calls pool.burn() → UniswapV3Pool
+3. Pool checks: require(positions[positionKey].positionManager == msg.sender)
+   - Only the original NonfungiblePositionManager contract can burn the position
+4. Core pool calls _updatePosition() for final fee extraction
+5. Final referrer fees calculated and stored for the NonfungiblePositionManager contract
+6. Position data cleared from pool
+7. NonfungiblePositionManager can later withdraw accumulated fees
+```
+
+### **Flow 7: Position Owner Fee Collection (Unchanged)**
+```
+1. Position Owner calls collect(params) → NonfungiblePositionManager contract
+2. NonfungiblePositionManager calls pool.collect() → UniswapV3Pool
+3. Pool returns LP fees (already reduced by referrer fees during swaps)
+4. Position owner receives remaining fees after referrer extraction
+5. NO changes to existing collect() flow - completely backwards compatible
+```
+
+### **Flow 8: Contract Authorization Flow**
+```
+1. Any position modification function called on pool
+2. Pool checks: require(positions[positionKey].positionManager == msg.sender)
+3. Only the original NonfungiblePositionManager contract that created position can modify it
+4. Other NonfungiblePositionManager contracts blocked from modifying positions they didn't create
+5. This prevents cross-contract unauthorized access
+```
+
+### **Flow 9: Cross-Contract Communication Flow**
+```
+1. Pool needs referrer address for fee collection
+2. Pool calls the NonfungiblePositionManager contract that's calling it:
+   INonfungiblePositionManager(msg.sender).positionManagerReferrers()
+3. NonfungiblePositionManager returns its configured referrer address
+4. Pool transfers fees directly to that referrer
+5. Each NonfungiblePositionManager contract manages its own referrer configuration
+```
+
+**Multi-Contract Architecture:**
+- Multiple NonfungiblePositionManager contracts can exist
+- Each has its own referrer configuration and fee accumulation
+- Pool tracks which NonfungiblePositionManager created each position
+- Only original NonfungiblePositionManager can modify/delete positions it created
 
 ## Implementation Components
 
@@ -68,28 +213,57 @@ struct Position {
 }
 ```
 
-### 2. Position Manager Configuration
+### 2. Position Manager Configuration, Authorization, and Fee Collection
 
 ```solidity
-// Self-managed configuration (no factory whitelist)
-mapping(address => address) public positionManagerReferrers;
-mapping(address => uint24) public positionManagerFeeRates;
+// Self-managed configuration (instance variables per contract)
+address public positionManagerReferrer;        // This contract's referrer
+uint24 public positionManagerFeeRate;          // This contract's fee rate
 
-/// @notice Set referrer address for position manager
-/// @param referrer Address to receive referrer fees
-function setPositionManagerReferrer(address referrer) external;
+/// @notice Modifier to ensure only position manager can modify their positions
+modifier onlyPositionManager(uint256 tokenId) {
+    require(_positions[tokenId].positionManager == msg.sender, "Not position manager");
+    _;
+}
 
-/// @notice Set referrer fee rate for position manager  
+/// @notice Set referrer address for this NonfungiblePositionManager contract
+/// @dev Only callable by contract owner/admin. Sets referrer for ALL positions created by this contract.
+/// @param referrer Address to receive referrer fees (can be EOA or contract)
+function setPositionManagerReferrer(address referrer) external onlyOwner;
+
+/// @notice Set referrer fee rate for this NonfungiblePositionManager contract
+/// @dev Only callable by contract owner/admin. Applies to ALL positions created by this contract.
 /// @param feeRate Fee rate in basis points (0-10000, max 100%)
-function setPositionManagerFeeRate(uint24 feeRate) external {
+function setPositionManagerFeeRate(uint24 feeRate) external onlyOwner {
     require(feeRate <= 10000, "Fee rate exceeds 100%");
     // Implementation...
 }
 
-/// @notice Get position manager configuration
-/// @param positionManager Position manager address
-/// @return referrer Referrer address
-/// @return feeRate Fee rate in basis points
+/// @notice Collect accumulated referrer fees from a specific pool
+/// @dev Only callable by contract owner/admin. Fees sent directly to configured referrer.
+/// @param poolAddress The pool to collect fees from
+/// @return amount0 Amount of token0 collected and sent to referrer
+/// @return amount1 Amount of token1 collected and sent to referrer
+function collectFeesFromPool(address poolAddress) 
+    external 
+    onlyOwner 
+    returns (uint128 amount0, uint128 amount1);
+
+/// @notice Collect accumulated referrer fees from multiple pools
+/// @dev Only callable by contract owner/admin. Fees sent directly to configured referrer.
+/// @param poolAddresses Array of pools to collect fees from
+/// @return amounts0 Array of token0 amounts collected per pool
+/// @return amounts1 Array of token1 amounts collected per pool
+function collectFeesFromPools(address[] calldata poolAddresses)
+    external
+    onlyOwner
+    returns (uint128[] memory amounts0, uint128[] memory amounts1);
+
+/// @notice Get referrer configuration for any NonfungiblePositionManager contract
+/// @dev Can be called by anyone, typically used by pools to get referrer info
+/// @param positionManager NonfungiblePositionManager contract address to query
+/// @return referrer Referrer address configured for that contract
+/// @return feeRate Fee rate in basis points configured for that contract
 function getPositionManagerConfig(address positionManager) 
     external 
     view 
@@ -275,7 +449,7 @@ event PositionManagerFeeCollectedMultiple(
 
 ## Implementation Phases
 
-### Phase 1: Periphery Infrastructure (Tasks 1-5)
+### Phase 1: Periphery Infrastructure (Tasks 1-4)
 **Repository: uniswap-v3-periphery**
 
 **Task 1: Enhance Position Struct [PERIPHERY]**
@@ -285,13 +459,14 @@ event PositionManagerFeeCollectedMultiple(
 - Optimize storage packing to minimize gas costs
 - Update Position struct documentation
 
-**Task 2: Position Manager Configuration and Authorization [PERIPHERY]**
+**Task 2: Position Manager Configuration, Authorization, and Fee Collection [PERIPHERY]**
 - **Contract**: `NonfungiblePositionManager.sol`
 - Add `onlyPositionManager(uint256 tokenId)` modifier for position access control
-- Implement `setPositionManagerReferrer(address referrer)` function (one referrer per position manager)
-- Implement `setPositionManagerFeeRate(uint24 feeRate)` function with validation (one fee rate per position manager)
+- Implement `setPositionManagerReferrer(address referrer)` function with `onlyOwner` modifier
+- Implement `setPositionManagerFeeRate(uint24 feeRate)` function with `onlyOwner` modifier and validation
 - Add validation: `require(feeRate <= 10000, "Fee rate exceeds 100%")`
-- Restrict access to position manager only (msg.sender validation)
+- Implement `collectFeesFromPool(address poolAddress)` function with `onlyOwner` modifier
+- Implement `collectFeesFromPools(address[] poolAddresses)` function with `onlyOwner` modifier
 - Apply authorization to position modification functions (increaseLiquidity, decreaseLiquidity, etc.)
 
 **Task 3: Position Manager Configuration Storage [PERIPHERY]**
@@ -309,7 +484,7 @@ event PositionManagerFeeCollectedMultiple(
 - Set `position.referrerFeeRate` from manager's configuration
 - Emit `PositionCreated` event with tracking data
 
-### Phase 2: Periphery View Functions and Events (Tasks 5-7)
+### Phase 2: Periphery View Functions and Events (Tasks 5-6)
 **Repository: uniswap-v3-periphery**
 
 **Task 5: Pool Integration Interface [PERIPHERY]**
@@ -318,19 +493,25 @@ event PositionManagerFeeCollectedMultiple(
 - Ensure `positionManagerReferrers` and `positionManagerFeeRates` are publicly accessible
 - Add helper functions for position manager queries if needed
 
-**Task 6: View Functions [PERIPHERY]**
+**Task 6: View and Collection Functions [PERIPHERY]**
 - **Contract**: `NonfungiblePositionManager.sol`
 - Implement `getPositionManagerConfig(address manager)` returns (address referrer, uint24 feeRate)
+- Implement admin fee collection functions:
+  - `collectFeesFromPool(address poolAddress)` - single pool collection
+  - `collectFeesFromPools(address[] poolAddresses)` - multi-pool collection
 - Add helper functions for position manager queries
 - Ensure efficient gas usage for read operations
+- Add proper error handling for failed pool calls
 
 **Task 7: Event System [PERIPHERY]**
 - **Contract**: `NonfungiblePositionManager.sol`
 - Implement `PositionCreated(tokenId, positionManager, referrerFeeRate)` event
 - Implement `PositionManagerReferrerSet(positionManager, referrer)` event  
 - Implement `PositionManagerFeeRateSet(positionManager, feeRate)` event
+- Implement `FeesCollectedFromPool(poolAddress, referrer, amount0, amount1)` event
+- Implement `FeesCollectedFromPool(poolAddresses, referrer, totalAmount0, totalAmount1)` event
 
-### Phase 3: Core Pool Integration (Tasks 8-10)
+### Phase 3: Core Pool Integration (Tasks 7-9)
 **Repository: uniswap-v3-core**
 
 **Task 8: Pool Fee Storage [CORE]**
@@ -357,15 +538,15 @@ event PositionManagerFeeCollectedMultiple(
 - Transfer fees directly to configured referrer
 - Clear accumulated fees after successful transfer
 
-### Phase 4: Periphery Testing (Tasks 11-12)
+### Phase 4: Periphery Testing (Tasks 10-11)
 **Repository: uniswap-v3-periphery**
 
 **Task 11: Periphery Unit Testing [PERIPHERY]**
 - **Test Files**: `test/PositionManagerReferrer.spec.ts`
-- Test position manager configuration functions
+- Test NonfungiblePositionManager contract configuration functions
 - Test position creation with referrer tracking
-- Test position manager authorization (only original manager can modify positions)
-- Test unauthorized access prevention (other managers cannot modify positions)
+- Test NonfungiblePositionManager contract authorization (only original NonfungiblePositionManager contract can modify positions)
+- Test unauthorized access prevention (other NonfungiblePositionManager contracts cannot modify positions)
 - Test fee collection (single and batch)
 - Test edge cases and error conditions
 - Test 0% and 100% fee rate scenarios
@@ -379,7 +560,7 @@ event PositionManagerFeeCollectedMultiple(
 - Benchmark against existing operations
 - Target <25k gas overhead per operation
 
-### Phase 5: Core Testing (Tasks 13-14)
+### Phase 5: Core Testing (Tasks 12-13)
 **Repository: uniswap-v3-core**
 
 **Task 13: Core Pool Testing [CORE]**
@@ -397,13 +578,13 @@ event PositionManagerFeeCollectedMultiple(
 - Analyze impact on swap gas costs
 - Ensure minimal overhead for existing operations
 
-### Phase 6: Cross-Contract Integration (Tasks 15-16)
+### Phase 6: Cross-Contract Integration (Tasks 14-15)
 **Repository: Both uniswap-v3-core and uniswap-v3-periphery**
 
 **Task 15: Integration Testing [PERIPHERY + CORE]**
 - **Test Files**: `test/PositionManagerReferrerIntegration.spec.ts`
 - Test integration with existing position management (mint, increase, decrease, collect, burn)
-- Test position manager authorization across all position operations
+- Test NonfungiblePositionManager contract authorization across all position operations
 - Test that only original position manager can modify their positions
 - Test interaction with protocol fees and SwapRouter referrer fees
 - Test core pool contract integration with fee extraction
@@ -414,7 +595,7 @@ event PositionManagerFeeCollectedMultiple(
 **Task 16: Security and Audit Preparation [PERIPHERY + CORE]**
 - **Scope**: Both contract sets
 - Security review of all new functions in both repositories
-- Position manager authorization validation (prevent unauthorized position modifications)
+- NonfungiblePositionManager contract authorization validation (prevent unauthorized position modifications)
 - Reentrancy analysis and protection (especially cross-contract calls)
 - Access control validation across contract boundaries
 - Fee calculation accuracy verification in core contracts
@@ -467,7 +648,7 @@ function getPositionManagerConfig(address manager)
 #### 2. Position Creation (Inherits Manager's Configuration)
 ```solidity
 function mint(MintParams calldata params) external payable returns (...) {
-    // Set position manager data (immutable after creation)
+    // Set NonfungiblePositionManager contract data (immutable after creation)
     address positionManager = msg.sender;
     uint24 referrerFeeRate = positionManagerFeeRates[positionManager];
     
@@ -536,25 +717,30 @@ pool.collectPositionManagerFee();
 ### Key Simplifications
 
 #### 1. Configuration Simplicity
-- **One referrer per position manager** (not per position)
-- **One fee rate per position manager** (not per position)
-- **Immutable position data**: Set once during mint from manager's config
+- **One referrer per NonfungiblePositionManager contract** (not per position)
+- **One fee rate per NonfungiblePositionManager contract** (not per position)  
+- **Immutable position data**: Set once during mint from contract's config
+- **Contract-level management**: Each contract deployment manages its own configuration
 
 #### 2. Collection Simplicity  
-- Position manager calls pool directly
-- Pool automatically sends to THE referrer
+- NonfungiblePositionManager contract calls pool directly
+- Pool automatically sends to that contract's configured referrer
 - No recipient parameter needed
 - No complex routing logic
+- Each contract collects its own accumulated fees
 
 #### 3. Storage Efficiency
-- Two simple mappings in periphery
+- Simple instance variables per contract deployment
 - Direct public access for pools
 - No complex nested structures
+- Separate fee accumulation per contract in pools
 
 #### 4. Security Model
-- Position manager controls their referrer
-- Referrer receives all fees from that position manager
-- No way to redirect fees during collection, cross-contract communication
+- Each NonfungiblePositionManager contract controls its own referrer
+- Each contract's referrer receives all fees from positions created by that contract
+- No way to redirect fees during collection
+- Cross-contract authorization prevents unauthorized modifications
+- Contract isolation prevents interference between different deployments
 
 ## Gas Optimization Strategies
 

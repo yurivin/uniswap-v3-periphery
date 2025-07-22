@@ -1,7 +1,13 @@
-# Position Manager Referrer Fee Integration Analysis
+# NonfungiblePositionManager Referrer Fee Integration Analysis
 
 ## Overview
-This document analyzes whether the Uniswap V3 fee distribution mechanism can be applied to give position manager referrers a portion of swap fees, and evaluates the feasibility, challenges, and implementation approaches.
+This document analyzes the integration of referrer fee functionality into Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create, with fees extracted during swap fee calculations and collected through an admin-controlled process.
+
+## Key Terminology
+- **Position Manager**: A deployed NonfungiblePositionManager contract address (not an EOA)
+- **Original Position Manager**: The specific NonfungiblePositionManager contract that created a position
+- **Referrer**: The address configured to receive referrer fees (can be EOA or contract)
+- **Multi-Contract Architecture**: Multiple NonfungiblePositionManager contracts operating independently with different referrer configurations
 
 ## Current Fee Distribution Mechanism
 
@@ -38,35 +44,41 @@ Total Swap Fees (100%)
 - **Stored**: `mapping(address => mapping(address => uint256)) referrerFees`
 - **Collected**: Separate `collectReferrerFees()` function
 
-## Proposed Position Manager Referrer Fee Integration
+**NonfungiblePositionManager Referrer Fees (NEW):**
+- **Extracted**: From LP fees during position fee calculations
+- **Stored**: `mapping(address => PositionManagerFees) positionManagerFees` (per contract)
+- **Collected**: Admin calls `collectFeesFromPool()` → Contract calls pool → Fees sent to referrer
 
-### 1. Conceptual Approach
+## NonfungiblePositionManager Referrer Fee Integration
 
-The idea is to give position manager referrers a portion of the fees that would normally go to the liquidity positions they helped create. This would work by:
+### 1. Multi-Contract Architecture Approach
 
-1. **Identifying active positions** created by whitelisted position managers
-2. **Calculating referrer fees** from the LP fees of those positions
-3. **Distributing referrer fees** to the position managers who created the positions
+The system allows multiple independent NonfungiblePositionManager contracts to operate with their own referrer configurations:
 
-### 2. Fee Hierarchy with Position Manager Referrers
+1. **Multiple Contract Deployments**: Each NonfungiblePositionManager contract has its own referrer and fee rate
+2. **Position Tracking**: Each position stores which NonfungiblePositionManager contract created it
+3. **Contract Authorization**: Only the original contract can modify positions it created
+4. **Separate Fee Accumulation**: Pool accumulates fees separately for each NonfungiblePositionManager contract
+
+### 2. Fee Hierarchy with NonfungiblePositionManager Referrers
 
 ```
 Total Swap Fees (100%)
 ├── Protocol Fee (0-1/255 of total) - Extracted first during swap
 ├── Swap Referrer Fee (if implemented) - Extracted from swap input  
-├── Position Manager Referrer Fee (NEW) - Extracted from LP fees (max 100% of LP portion)
+├── NonfungiblePositionManager Referrer Fee (NEW) - Extracted from LP fees (max 100% of LP portion)
 └── Liquidity Provider Fee (remainder) - Distributed to positions
 ```
 
-**Position Manager Referrer Fee Details:**
-- **Extracted from**: LP fees that would go to positions created by position managers
+**NonfungiblePositionManager Referrer Fee Details:**
+- **Extracted from**: LP fees that would go to positions created by NonfungiblePositionManager contracts
 - **Data type**: `uint24` (consistent with existing fee types - pool fee tiers, SwapRouter referrer fees, core swap math)
 - **Range**: 0-10000 basis points (0-100%) using standard calculation `(amount * feeRate) / 10000`
 - **Maximum rate**: 100% of LP fees earned by the specific position  
-- **Example 1**: Position earns 100 USDC in LP fees, 5% rate (500 basis points) → Position manager gets 5 USDC → Position owner gets 95 USDC
-- **Example 2**: Position earns 100 USDC in LP fees, 100% rate (10000 basis points) → Position manager gets 100 USDC → Position owner gets 0 USDC
-- **Storage pattern**: `mapping(address => mapping(address => uint256)) positionManagerReferrerFees` (follows existing patterns)
-- **Collection pattern**: Separate `collectPositionManagerFee()` function (follows existing patterns)
+- **Example 1**: Position earns 100 USDC in LP fees, 5% rate (500 basis points) → Contract's referrer gets 5 USDC → Position owner gets 95 USDC
+- **Example 2**: Position earns 100 USDC in LP fees, 100% rate (10000 basis points) → Contract's referrer gets 100 USDC → Position owner gets 0 USDC
+- **Storage pattern**: `mapping(address => PositionManagerFees) positionManagerFees` (per NonfungiblePositionManager contract)
+- **Collection pattern**: Admin calls `collectFeesFromPool()` → Contract calls pool → Pool sends to referrer
 
 ## Technical Analysis
 
@@ -134,18 +146,31 @@ Position manager referrer fees need to integrate with existing fee calculations:
 - Accumulate fees per position manager per token (follows existing patterns)
 - **Result**: Consistent with existing fee extraction patterns
 
-### 3. **Recommended Approach: Hybrid Pattern (Protocol Fee Storage + Position Fee Integration)**
+### 3. **Final Architecture: Instance Variable + Pool Storage Pattern**
 
-Combining the best of protocol fee storage with position fee calculation integration:
+Multi-contract architecture with instance variables and pool-centric fee storage:
 
 ```solidity
-// Pool-centric storage (following protocol fee pattern)
+// In NonfungiblePositionManager.sol - Instance variables per contract deployment
+address public positionManagerReferrer;        // This contract's referrer
+uint24 public positionManagerFeeRate;          // This contract's fee rate
+
+function setPositionManagerReferrer(address referrer) external onlyOwner {
+    positionManagerReferrer = referrer;
+}
+
+function collectFeesFromPool(address poolAddress) external onlyOwner {
+    IUniswapV3Pool(poolAddress).collectPositionManagerFee();
+    // Pool sends fees directly to positionManagerReferrer
+}
+
+// In UniswapV3Pool.sol - Pool-centric storage (following protocol fee pattern)
 struct PositionManagerFees {
     uint128 token0;
     uint128 token1;
 }
 
-mapping(address => PositionManagerFees) public positionManagerFees;
+mapping(address => PositionManagerFees) public positionManagerFees; // Per NonfungiblePositionManager contract
 
 // Fee extraction integrated into existing position fee calculations
 function _updatePosition(
@@ -170,14 +195,14 @@ function _updatePosition(
         FixedPoint128.Q128
     );
     
-    // NEW: Extract position manager referrer fees during position fee calculation
-    if (_self.positionManager != address(0) && _self.referrerFeeRate > 0) {
-        uint256 referrerFee0 = (tokensOwed0 * _self.referrerFeeRate) / 10000;
-        uint256 referrerFee1 = (tokensOwed1 * _self.referrerFeeRate) / 10000;
+    // NEW: Extract NonfungiblePositionManager referrer fees during position fee calculation
+    if (nftManagerAddress != address(0) && referrerFeeRate > 0) {
+        uint256 referrerFee0 = (tokensOwed0 * referrerFeeRate) / 10000;
+        uint256 referrerFee1 = (tokensOwed1 * referrerFeeRate) / 10000;
         
-        // Accumulate in pool storage (like protocol fees)
-        positionManagerFees[_self.positionManager].token0 += referrerFee0;
-        positionManagerFees[_self.positionManager].token1 += referrerFee1;
+        // Accumulate in pool storage per NonfungiblePositionManager contract (like protocol fees)
+        positionManagerFees[nftManagerAddress].token0 += referrerFee0;
+        positionManagerFees[nftManagerAddress].token1 += referrerFee1;
         
         // Reduce position owner fees
         tokensOwed0 -= referrerFee0;
@@ -189,30 +214,30 @@ function _updatePosition(
     _self.tokensOwed1 += tokensOwed1;
 }
 
-// Position manager collection (following collectProtocol pattern)
+// NonfungiblePositionManager collection (following collectProtocol pattern)
 function collectPositionManagerFee()
     external
     returns (uint128 amount0, uint128 amount1)
 {
-    address positionManager = msg.sender;
+    address nftManagerContract = msg.sender; // Must be NonfungiblePositionManager contract
     
-    // Get configured referrer address
-    address referrer = INonfungiblePositionManager(nftContract).positionManagerReferrers(positionManager);
+    // Get referrer address from the calling NonfungiblePositionManager contract
+    address referrer = INonfungiblePositionManager(nftManagerContract).positionManagerReferrer();
     require(referrer != address(0), "No referrer configured");
     
-    amount0 = positionManagerFees[positionManager].token0;
-    amount1 = positionManagerFees[positionManager].token1;
+    amount0 = positionManagerFees[nftManagerContract].token0;
+    amount1 = positionManagerFees[nftManagerContract].token1;
     
     if (amount0 > 0) {
-        positionManagerFees[positionManager].token0 = 0;
+        positionManagerFees[nftManagerContract].token0 = 0;
         TransferHelper.safeTransfer(token0, referrer, amount0);
     }
     if (amount1 > 0) {
-        positionManagerFees[positionManager].token1 = 0;
+        positionManagerFees[nftManagerContract].token1 = 0;
         TransferHelper.safeTransfer(token1, referrer, amount1);
     }
     
-    emit CollectPositionManagerFee(positionManager, referrer, amount0, amount1);
+    emit CollectPositionManagerFee(nftManagerContract, referrer, amount0, amount1);
 }
 ```
 
