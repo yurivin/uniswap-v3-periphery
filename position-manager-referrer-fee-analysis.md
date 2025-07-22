@@ -60,11 +60,13 @@ Total Swap Fees (100%)
 
 **Position Manager Referrer Fee Details:**
 - **Extracted from**: LP fees that would go to positions created by position managers
+- **Data type**: `uint24` (consistent with existing fee types - pool fee tiers, SwapRouter referrer fees, core swap math)
+- **Range**: 0-10000 basis points (0-100%) using standard calculation `(amount * feeRate) / 10000`
 - **Maximum rate**: 100% of LP fees earned by the specific position  
-- **Example 1**: Position earns 100 USDC in LP fees, 5% rate → Position manager gets 5 USDC → Position owner gets 95 USDC
-- **Example 2**: Position earns 100 USDC in LP fees, 100% rate → Position manager gets 100 USDC → Position owner gets 0 USDC
+- **Example 1**: Position earns 100 USDC in LP fees, 5% rate (500 basis points) → Position manager gets 5 USDC → Position owner gets 95 USDC
+- **Example 2**: Position earns 100 USDC in LP fees, 100% rate (10000 basis points) → Position manager gets 100 USDC → Position owner gets 0 USDC
 - **Storage pattern**: `mapping(address => mapping(address => uint256)) positionManagerReferrerFees` (follows existing patterns)
-- **Collection pattern**: Separate `collectPositionManagerReferrerFees()` function (follows existing patterns)
+- **Collection pattern**: Separate `collectPositionManagerFee()` function (follows existing patterns)
 
 ## Technical Analysis
 
@@ -132,77 +134,118 @@ Position manager referrer fees need to integrate with existing fee calculations:
 - Accumulate fees per position manager per token (follows existing patterns)
 - **Result**: Consistent with existing fee extraction patterns
 
-### 3. **Alternative Approach: Fee Collection Integration**
+### 3. **Recommended Approach: Hybrid Pattern (Protocol Fee Storage + Position Fee Integration)**
 
-Instead of modifying the core fee distribution during swaps, integrate referrer fees at the collection level:
+Combining the best of protocol fee storage with position fee calculation integration:
 
 ```solidity
-// Modified collect function
-function collect(CollectParams calldata params) external returns (uint256 amount0, uint256 amount1) {
-    // Standard fee calculation
-    _updatePosition(owner, tickLower, tickUpper, 0);
+// Pool-centric storage (following protocol fee pattern)
+struct PositionManagerFees {
+    uint128 token0;
+    uint128 token1;
+}
+
+mapping(address => PositionManagerFees) public positionManagerFees;
+
+// Fee extraction integrated into existing position fee calculations
+function _updatePosition(
+    address owner,
+    int24 tickLower,
+    int24 tickUpper,
+    int128 liquidityDelta,
+    int256 feeGrowthInside0X128,
+    int256 feeGrowthInside1X128
+) private returns (bytes32 positionKey) {
+    Position.Info storage _self = positions[positionKey];
     
-    // Get position manager and referrer fee rate
-    address positionManager = _positions[params.tokenId].positionManager;
-    uint8 referrerFeeRate = getPositionManagerReferrerFeeRate(positionManager);
+    // Existing position fee calculations...
+    uint256 tokensOwed0 = FullMath.mulDiv(
+        feeGrowthInside0X128 - _self.feeGrowthInside0LastX128,
+        _self.liquidity,
+        FixedPoint128.Q128
+    );
+    uint256 tokensOwed1 = FullMath.mulDiv(
+        feeGrowthInside1X128 - _self.feeGrowthInside1LastX128,
+        _self.liquidity,
+        FixedPoint128.Q128
+    );
     
-    // Calculate amounts
-    uint256 totalOwed0 = position.tokensOwed0;
-    uint256 totalOwed1 = position.tokensOwed1;
+    // NEW: Extract position manager referrer fees during position fee calculation
+    if (_self.positionManager != address(0) && _self.referrerFeeRate > 0) {
+        uint256 referrerFee0 = (tokensOwed0 * _self.referrerFeeRate) / 10000;
+        uint256 referrerFee1 = (tokensOwed1 * _self.referrerFeeRate) / 10000;
+        
+        // Accumulate in pool storage (like protocol fees)
+        positionManagerFees[_self.positionManager].token0 += referrerFee0;
+        positionManagerFees[_self.positionManager].token1 += referrerFee1;
+        
+        // Reduce position owner fees
+        tokensOwed0 -= referrerFee0;
+        tokensOwed1 -= referrerFee1;
+    }
     
-    amount0 = params.amount0Max >= totalOwed0 ? totalOwed0 : params.amount0Max;
-    amount1 = params.amount1Max >= totalOwed1 ? totalOwed1 : params.amount1Max;
+    // Existing logic continues with adjusted tokensOwed amounts...
+    _self.tokensOwed0 += tokensOwed0;
+    _self.tokensOwed1 += tokensOwed1;
+}
+
+// Position manager collection (following collectProtocol pattern)
+function collectPositionManagerFee()
+    external
+    returns (uint128 amount0, uint128 amount1)
+{
+    address positionManager = msg.sender;
     
-    // Calculate referrer fees
-    uint256 referrerFee0 = (amount0 * referrerFeeRate) / 255;
-    uint256 referrerFee1 = (amount1 * referrerFeeRate) / 255;
+    // Get configured referrer address
+    address referrer = INonfungiblePositionManager(nftContract).positionManagerReferrers(positionManager);
+    require(referrer != address(0), "No referrer configured");
     
-    // Update position state
-    position.tokensOwed0 -= amount0;
-    position.tokensOwed1 -= amount1;
+    amount0 = positionManagerFees[positionManager].token0;
+    amount1 = positionManagerFees[positionManager].token1;
     
-    // Transfer fees to position manager referrer
-    if (referrerFee0 > 0) TransferHelper.safeTransfer(token0, positionManager, referrerFee0);
-    if (referrerFee1 > 0) TransferHelper.safeTransfer(token1, positionManager, referrerFee1);
+    if (amount0 > 0) {
+        positionManagerFees[positionManager].token0 = 0;
+        TransferHelper.safeTransfer(token0, referrer, amount0);
+    }
+    if (amount1 > 0) {
+        positionManagerFees[positionManager].token1 = 0;
+        TransferHelper.safeTransfer(token1, referrer, amount1);
+    }
     
-    // Transfer remaining fees to position owner
-    uint256 lpAmount0 = amount0 - referrerFee0;
-    uint256 lpAmount1 = amount1 - referrerFee1;
-    if (lpAmount0 > 0) TransferHelper.safeTransfer(token0, params.recipient, lpAmount0);
-    if (lpAmount1 > 0) TransferHelper.safeTransfer(token1, params.recipient, lpAmount1);
-    
-    return (lpAmount0, lpAmount1);
+    emit CollectPositionManagerFee(positionManager, referrer, amount0, amount1);
 }
 ```
 
 ## Implementation Approaches
 
-### Approach 1: Swap-Time Fee Distribution (Recommended)
+### Approach 1: Hybrid Pattern - Protocol Fee Storage + Position Fee Integration (Recommended)
 
 **Pros:**
-- Referrer fees extracted at swap time (like protocol fees)
-- Immediate fee accumulation for position managers
-- Follows existing protocol fee extraction pattern
-- No dependency on position owners calling collect()
-- Clean separation of concerns
+- Combines best of protocol fee storage and position fee calculation patterns
+- No separate fee extraction functions needed
+- Integrates into existing `_updatePosition()` logic seamlessly  
+- No cross-contract calls during swaps
+- Pool handles all fee logic independently
+- Multiple position managers per pool supported
+- Clean separation: pools accumulate, position managers collect
+- No recipient parameter needed (always goes to configured referrer)
+- Minimal gas overhead - piggybacks on existing calculations
 
 **Cons:**
-- Requires pool contract modifications
-- Need to track position managers for active positions
-- Complexity in fee calculation during swaps
+- Requires modifications to both pool and periphery contracts
+- Need position manager data in position struct
 
-### Approach 2: Collection-Time Fee Distribution (Alternative)
+### Approach 2: Cross-Contract Fee Distribution (Rejected)
 
 **Pros:**
-- Simpler implementation
-- No impact on swap gas costs
-- Leverages existing fee accumulation mechanism
-- Lower risk of introducing bugs
+- Immediate fee extraction during operations
+- Direct communication between contracts
 
 **Cons:**
-- Referrer fees only distributed when positions are collected
-- Requires position owner to trigger fee collection
-- May delay referrer fee receipt
+- Complex cross-contract calls during swaps
+- Higher gas costs due to external calls
+- Risk of call failures affecting swaps
+- More complex error handling
 
 ### Approach 3: Periodic Fee Distribution (Alternative)
 
@@ -246,12 +289,13 @@ The Uniswap V3 fee distribution mechanism can be extended to support position ma
 
 ## Recommended Implementation Strategy
 
-### Phase 1: Swap-Time Integration (Recommended)
+### Phase 1: Hybrid Pattern Integration (Recommended)
 1. Add `positionManager` and `referrerFeeRate` fields to Position struct
 2. Implement position manager configuration in NonFungiblePositionManager (no factory whitelist)
-3. Modify pool contract fee calculation to extract position manager referrer fees
-4. Add `collectPositionManagerReferrerFees()` function (keep `collect()` unchanged)
-5. Add events for referrer fee tracking
+3. Add pool storage for position manager referrer fees (like protocol fees)
+4. Integrate referrer fee extraction into existing `_updatePosition()` function
+5. Add `collectPositionManagerFee()` function (keep `collect()` unchanged)
+6. Add events for referrer fee tracking
 
 ### Phase 2: Optimization (Optional)
 1. Implement batched fee collection for gas efficiency
@@ -281,7 +325,7 @@ struct Position {
 }
 
 // Factory configuration
-mapping(address => uint8) public positionManagerReferrerFeeRates;
+mapping(address => uint8) public positionManagerFeeRates;
 
 // Enhanced collect function
 function collect(CollectParams calldata params) external returns (uint256 amount0, uint256 amount1) {
@@ -295,7 +339,7 @@ function collect(CollectParams calldata params) external returns (uint256 amount
     amount1 = params.amount1Max >= position.tokensOwed1 ? position.tokensOwed1 : params.amount1Max;
     
     // Get referrer fee rate
-    uint8 referrerFeeRate = IUniswapV3Factory(factory).positionManagerReferrerFeeRates(position.positionManager);
+    uint8 referrerFeeRate = IUniswapV3Factory(factory).positionManagerFeeRates(position.positionManager);
     
     // Calculate referrer fees
     uint256 referrerFee0 = (amount0 * referrerFeeRate) / 255;
@@ -337,12 +381,15 @@ The Uniswap V3 fee distribution mechanism can be extended to support position ma
 
 ### **Recommended Approach:**
 
-**Swap-Time Fee Distribution** (like protocol fees) is the optimal approach:
-- Immediate fee accumulation during swaps
-- No dependency on position owners calling collect()
-- Consistent with existing protocol fee patterns
-- Position managers receive fees regardless of LP collection timing
-- Clean separation: collect() unchanged, new collectPositionManagerReferrerFees() function
+**Hybrid Pattern** (combining protocol fee storage with position fee integration) is the optimal approach:
+- Pool stores and manages all position manager referrer fees (like protocol fees)
+- Fee extraction integrated into existing position fee calculations (no separate functions)
+- Position managers collect directly from pools (like collectProtocol)
+- No cross-contract calls during swaps
+- Multiple position managers per pool supported
+- Fees always go to configured referrer (no recipient parameter)
+- Clean separation: pools accumulate, position managers collect
+- Minimal gas overhead: piggybacks on existing `_updatePosition()` calculations
 
 ### **Success Factors:**
 
@@ -377,12 +424,12 @@ function collectReferrerFees(address token) external returns (uint256);
 
 ### **Position Manager Referrer Fee Pattern (NEW)**
 ```solidity
-// Extract during swap (from LP fees going to positions)  
+// Extract during swap in pool (like protocol fees)
 uint256 referrerFee = (positionLPFees * position.referrerFeeRate) / 10000;
-positionManagerReferrerFees[manager][token] += referrerFee;  // Accumulate
+positionManagerFees[positionManager].token0 += referrerFee;  // Accumulate in pool
 
-// Collect separately  
-function collectPositionManagerReferrerFees(address token) external returns (uint256);
+// Collect from pool (like collectProtocol) 
+function collectPositionManagerFee(address positionManager) external returns (uint128, uint128);
 ```
 
 **All three patterns share the same architecture:**
@@ -391,3 +438,52 @@ function collectPositionManagerReferrerFees(address token) external returns (uin
 3. ✅ **Collect via dedicated functions** (separate collection)
 4. ✅ **Safe state management** (clear before transfer)
 5. ✅ **Event emission** for tracking
+6. ✅ **Consistent data types** (`uint24` for fee rates, following existing patterns)
+
+## Data Type Consistency Analysis
+
+### **Uniswap V3 Fee Data Types**
+
+**Pool Fee Tiers:** `uint24`
+- FeeAmount.LOW = 500, MEDIUM = 3000, HIGH = 10000
+- Used in pool creation and swap operations
+
+**SwapRouter Referrer Fees:** `uint24` 
+- Range: 0-500 basis points (0-5%)
+- Calculation: `(amount * feeBasisPoints) / 10000`
+
+**Core Swap Math:** `uint24`
+- Used in SwapMath.computeSwapStep() for feePips calculation
+- Consistent throughout core swap operations
+
+**Protocol Fees:** `uint8`
+- Special divisor system (protocol fee = total_fee / feeProtocol)
+- Different pattern, used for governance-controlled fees
+
+### **Position Manager Referrer Fee Data Type Choice**
+
+**Selected:** `uint24` (consistent with SwapRouter referrer fees and pool fee tiers)
+
+**Justification:**
+- ✅ **Ecosystem consistency**: Matches existing fee mechanisms
+- ✅ **Sufficient range**: 0-16,777,215 (more than enough for 0-10000 basis points)
+- ✅ **Gas efficiency**: Smaller than uint256, fits well in struct packing
+- ✅ **Standard calculation**: Uses same basis points formula as other fees
+- ✅ **Future compatibility**: Aligns with established Uniswap patterns
+
+**Implementation:**
+```solidity
+struct Position {
+    // ... existing fields
+    uint24 referrerFeeRate;  // 0-10000 basis points (0-100%)
+}
+
+// Configuration function
+function setPositionManagerFeeRate(uint24 feeRate) external {
+    require(feeRate <= 10000, "Fee rate exceeds 100%");
+    positionManagerFeeRates[msg.sender] = feeRate;
+}
+
+// Fee calculation (consistent with existing patterns)
+uint256 referrerFee = (positionLPFees * referrerFeeRate) / 10000;
+```

@@ -34,7 +34,7 @@ This document serves as a historical log of the evolution of the Position Manage
 - Extract fees when swaps occur and fees are calculated
 - Accumulate fees for position managers (like protocol fees)
 - Keep collect() function completely unchanged
-- Add new collectPositionManagerReferrerFees() function
+- Add new collectPositionManagerFee() function
 - **Advantages**:
   - Immediate fee accumulation
   - No dependency on position owner actions
@@ -47,6 +47,15 @@ This document serves as a historical log of the evolution of the Position Manage
 - **Self-managed configuration**: Each position manager sets their own referrer and fee rate
 - **No access control complexity**: Simplified management
 - **Backwards compatibility**: Existing positions work unchanged
+
+### Phase 6: Pool-Centric Architecture (Final)
+**Key Evolution**:
+- **Pool-centric fee handling**: Pools store and manage all position manager referrer fees
+- **No cross-contract calls**: Eliminated external calls during swaps
+- **Protocol fee pattern**: Follows exact same pattern as existing protocol fees
+- **Multiple position managers**: Each pool supports multiple position managers independently
+- **Direct collection**: Position managers collect directly from pools
+- **No recipient parameter**: Fees always go to configured referrer for security
 
 ## Outdated Design Elements (Historical Reference)
 
@@ -87,17 +96,20 @@ event PositionModifiedByManager(address indexed positionManager, ...);
 ## Final Architecture Summary
 
 ### Core Components
-1. **Position Struct Enhancement**: Track position manager and referrer fee rate
-2. **Self-Managed Configuration**: Position managers configure themselves
-3. **Swap-Time Fee Extraction**: Extract fees during swap calculations (like protocol fees)
-4. **Accumulate-Then-Collect**: New collection function for position managers
-5. **Unchanged LP Flow**: collect() function remains completely unchanged
+1. **Position Struct Enhancement**: Track position manager and referrer fee rate (in periphery)
+2. **Self-Managed Configuration**: Position managers configure themselves (in periphery)
+3. **Pool-Centric Fee Storage**: Pools store position manager referrer fees (like protocol fees)
+4. **Swap-Time Fee Extraction**: Extract fees during swap calculations (in pools)
+5. **Direct Pool Collection**: Position managers collect directly from pools (like collectProtocol)
+6. **Unchanged LP Flow**: collect() function remains completely unchanged
 
 ### Key Design Principles
-- **Follow existing patterns**: Mirror protocol fee and SwapRouter referrer patterns
-- **Clean separation**: LP fees and position manager fees handled separately
+- **Follow existing patterns**: Mirror protocol fee patterns exactly
+- **Pool-centric design**: All fee logic handled within pools
 - **Self-governance**: No central authority or whitelist required
-- **Backwards compatibility**: Existing integrations work unchanged
+- **No cross-contract calls**: Eliminate external calls during swaps
+- **Multiple position managers**: Support many position managers per pool
+- **Security-first**: Fees always go to configured referrer
 - **Gas efficiency**: Minimal overhead, leverage existing mechanisms
 
 ## Lessons Learned
@@ -113,5 +125,28 @@ event PositionModifiedByManager(address indexed positionManager, ...);
 2. **Swap-time extraction**: More complex but better user experience and consistency
 3. **Accumulation pattern**: The accumulate-then-collect pattern is proven and secure
 4. **Storage optimization**: Leverage existing patterns to minimize gas costs
+
+### Pool-Centric Fee Handling (Final)
+```solidity
+// FINAL - Pool-centric fee handling (adopted approach)
+struct PositionManagerFees {
+    uint128 token0;
+    uint128 token1;
+}
+
+mapping(address => PositionManagerFees) public positionManagerFees;
+
+function extractPositionManagerReferrerFees() internal {
+    // Extract fees during swaps (like protocol fees)
+    // Store in pool mapping
+    // No external calls needed
+}
+
+function collectPositionManagerFee(address positionManager) external {
+    // Position manager collects directly from pool
+    // Send to configured referrer
+    // Follow collectProtocol pattern
+}
+```
 
 This log preserves the complete design evolution for future reference and architectural decisions.
