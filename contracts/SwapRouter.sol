@@ -55,7 +55,7 @@ contract SwapRouter is
 
     /// @notice Accumulated referrer fees by referrer address and token
     /// @dev referrer => token => amount
-    mapping(address => mapping(address => uint256)) public referrerFees;
+    mapping(address => mapping(address => uint256)) public override referrerFees;
 
     // Events
     /// @notice Emitted when referrer address changes
@@ -85,7 +85,7 @@ contract SwapRouter is
     /// @notice Sets the referrer address
     /// @dev Only owner can modify referrer
     /// @param _referrer New referrer address (address(0) disables fees)
-    function setReferrer(address _referrer) external onlyOwner {
+    function setReferrer(address _referrer) external override onlyOwner {
         address oldReferrer = referrer;
         referrer = _referrer;
         emit ReferrerChanged(oldReferrer, _referrer);
@@ -94,7 +94,7 @@ contract SwapRouter is
     /// @notice Sets the referrer fee rate
     /// @dev Only owner can modify fee rate
     /// @param _feeBasisPoints Fee in basis points (max MAX_REFERRER_FEE)
-    function setReferrerFee(uint24 _feeBasisPoints) external onlyOwner {
+    function setReferrerFee(uint24 _feeBasisPoints) external override onlyOwner {
         require(_feeBasisPoints <= MAX_REFERRER_FEE, 'Fee too high');
         uint24 oldFee = referrerFeeBasisPoints;
         referrerFeeBasisPoints = _feeBasisPoints;
@@ -104,14 +104,14 @@ contract SwapRouter is
     /// @notice Returns current referrer configuration
     /// @return referrerAddress Current referrer address
     /// @return feeBasisPoints Current fee in basis points
-    function getReferrerConfig() external view returns (address referrerAddress, uint24 feeBasisPoints) {
+    function getReferrerConfig() external view override returns (address referrerAddress, uint24 feeBasisPoints) {
         return (referrer, referrerFeeBasisPoints);
     }
 
     /// @notice Calculate referrer fee for given amount
     /// @param amount Input amount
     /// @return fee Referrer fee amount
-    function calculateReferrerFee(uint256 amount) external view returns (uint256 fee) {
+    function calculateReferrerFee(uint256 amount) external view override returns (uint256 fee) {
         if (referrer == address(0) || referrerFeeBasisPoints == 0) {
             return 0;
         }
@@ -121,7 +121,7 @@ contract SwapRouter is
     /// @notice Collect accumulated referrer fees for a specific token
     /// @param token Token address to collect fees for
     /// @return amount Amount of fees collected
-    function collectReferrerFees(address token) external nonReentrant returns (uint256 amount) {
+    function collectReferrerFees(address token) external override nonReentrant returns (uint256 amount) {
         amount = referrerFees[msg.sender][token];
         require(amount > 0, 'No fees to collect');
         
@@ -139,6 +139,7 @@ contract SwapRouter is
     /// @return amounts Array of amounts collected for each token
     function collectReferrerFeesMultiple(address[] calldata tokens) 
         external 
+        override
         nonReentrant 
         returns (uint256[] memory amounts) 
     {

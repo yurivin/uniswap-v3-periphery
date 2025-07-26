@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Implementation Status
+
+### ✅ COMPLETED - SwapRouter Referrer Fees
+- **Status**: Production ready and fully tested with comprehensive test coverage
+- **Approach**: Periphery-only implementation (no core contract changes needed)
+- **Features**: Owner-controlled referrer management, accumulate-then-collect pattern, 0-5% fee rates
+- **Testing**: 6 comprehensive test files with 100+ test cases covering security, integration, and gas analysis
+- **Documentation**: Complete with deployment guides and technical implementation details
+
+### 📋 PLANNED - Position Manager Referrer Fees  
+- **Status**: Comprehensive planning and analysis complete, implementation not started
+- **Approach**: Requires core pool contract modifications for fee tracking at position level
+- **Current State**: Extensive documentation and implementation plan available
+- **Branch**: `ImplementPositionManager` (planning phase, not implementation)
+
 ## Build Commands
 
 - `npm run compile` - Compile all Solidity contracts using Hardhat
@@ -9,16 +24,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Testing
 
-Tests are located in the `test/` directory and use Hardhat with Waffle and Chai. The repository includes comprehensive testing for both original and enhanced functionality.
+Tests are located in the `test/` directory and use Hardhat with Waffle and Chai. The repository includes comprehensive testing for original functionality and **completed SwapRouter referrer features**.
 
 ### Test Organization
 
 **Core Contract Tests:**
 - `SwapRouter.spec.ts` - Original SwapRouter functionality tests
-- `NonfungiblePositionManager.spec.ts` - Position manager tests
+- `NonfungiblePositionManager.spec.ts` - Position manager tests (original functionality only)
 - `SwapRouter.gas.spec.ts` - Gas usage analysis
 
-**SwapRouter Referrer Functionality Tests:**
+**SwapRouter Referrer Functionality Tests (COMPLETED):**
 - `SwapRouterReferrer.spec.ts` - Unit tests for referrer functionality
 - `SwapRouterReferrerIntegration.spec.ts` - Integration tests with swap operations
 - `SwapRouterReferrerSecurity.spec.ts` - Security and attack vector prevention tests
@@ -55,12 +70,12 @@ This is the **Uniswap V3 Periphery** repository containing smart contracts that 
 ### Key Contracts
 
 **Core Router Contracts:**
-- `SwapRouter.sol` - Main entry point for token swaps with referrer fee functionality
+- `SwapRouter.sol` - Main entry point for token swaps with **COMPLETED** referrer fee functionality
   - Supports exact input/output, single/multi-hop swaps
   - Includes secure referrer fee system with accumulate-then-collect pattern
   - Owner-controlled referrer management with 0-5% fee rates
   - Full backwards compatibility when referrer functionality is disabled
-- `NonfungiblePositionManager.sol` - Manages liquidity positions as ERC721 NFTs
+- `NonfungiblePositionManager.sol` - Manages liquidity positions as ERC721 NFTs (original functionality only)
 
 **Supporting Contracts:**
 - `NonfungibleTokenPositionDescriptor.sol` - Generates SVG metadata for position NFTs
@@ -197,3 +212,18 @@ uint256 collected = router.collectReferrerFees(tokenA);
 - `TESTING_AND_DEPLOYMENT_GUIDE.md` - Complete testing and deployment guide
 - `swaprouter-referrer-router-level-implementation.md` - Detailed implementation docs
 - `TEST_COVERAGE_ANALYSIS.md` - Comprehensive test coverage analysis
+- `QUICK_REFERENCE.md` - Quick start guide for SwapRouter referrer functionality
+
+### Position Manager Planning Documentation
+- `position-manager-referrer-fee-analysis.md` - Technical feasibility analysis (514 lines)
+- `position-referrer-implementation-plan.md` - Complete implementation roadmap (784 lines)
+- `position-manager-gas-analysis.md` - Gas cost optimization analysis (300 lines)
+- `position-referrer-analysis-log.md` - Design evolution and decision log (210 lines)
+
+## Quick Start
+
+For immediate usage of the SwapRouter referrer functionality, see `QUICK_REFERENCE.md` which provides:
+- Setup and configuration examples
+- Common usage patterns
+- Fee collection workflows
+- Integration examples
