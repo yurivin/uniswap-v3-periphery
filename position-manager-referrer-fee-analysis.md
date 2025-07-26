@@ -1,7 +1,7 @@
 # NonfungiblePositionManager Referrer Fee Integration Analysis
 
 ## Overview
-This document analyzes the integration of referrer fee functionality into Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create, with fees extracted during swap fee calculations and collected through an admin-controlled process.
+This document analyzes the integration of referrer fee functionality into Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create, with fees extracted during swap fee calculations. **Referrer fees are retrieved dynamically from PositionManager contracts rather than stored with position data.**
 
 ## Key Terminology
 - **Position Manager**: A deployed NonfungiblePositionManager contract address (not an EOA)
@@ -56,7 +56,7 @@ Total Swap Fees (100%)
 The system allows multiple independent NonfungiblePositionManager contracts to operate with their own referrer configurations:
 
 1. **Multiple Contract Deployments**: Each NonfungiblePositionManager contract has its own referrer and fee rate
-2. **Position Tracking**: Each position stores which NonfungiblePositionManager contract created it
+2. **Position Tracking**: Each position tracks which NonfungiblePositionManager contract created it (referrer fees retrieved on-demand)
 3. **Contract Authorization**: Only the original contract can modify positions it created
 4. **Separate Fee Accumulation**: Pool accumulates fees separately for each NonfungiblePositionManager contract
 

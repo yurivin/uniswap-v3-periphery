@@ -9,14 +9,20 @@ repository.
 
 ## Enhanced Features
 
-This fork includes enhanced SwapRouter functionality with **secure referrer fee support**:
+This fork includes enhanced functionality with **secure referrer fee support**:
 
+### ✅ SwapRouter Referrer Fees (Production Ready)
 - 🎯 **Referrer Fee System** - Configurable fees (0-5%) for referral programs
 - 🔒 **Security First** - Accumulate-then-collect pattern prevents reentrancy attacks  
 - 🔧 **Owner Controlled** - Only contract owner can manage referrer settings
 - ⚡ **Gas Efficient** - Minimal overhead (~3-5% increase per swap)
 - 🔄 **Backwards Compatible** - Existing integrations work unchanged
 - 🧪 **Thoroughly Tested** - Comprehensive test suite with 100+ test cases
+
+### 📋 Position Manager Referrer Fees (Planned)
+- 🏗️ **Dynamic Fee Lookup** - Referrer fees retrieved from PositionManager contracts on-demand
+- 🎛️ **Multi-Contract Support** - Multiple PositionManager deployments with independent configurations
+- 📊 **Comprehensive Planning** - Detailed implementation plan and technical analysis available
 
 See [TESTING_AND_DEPLOYMENT_GUIDE.md](./TESTING_AND_DEPLOYMENT_GUIDE.md) for complete documentation.
 

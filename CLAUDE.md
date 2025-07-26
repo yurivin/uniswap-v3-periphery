@@ -13,7 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 📋 PLANNED - Position Manager Referrer Fees  
 - **Status**: Comprehensive planning and analysis complete, implementation not started
-- **Approach**: Requires core pool contract modifications for fee tracking at position level
+- **Approach**: PositionManager-level referrer fee lookup (positions don't store referrer fee data)
+- **Architecture**: Referrer fees retrieved from PositionManager contract on-demand rather than stored in position
 - **Current State**: Extensive documentation and implementation plan available
 - **Branch**: `ImplementPositionManager` (planning phase, not implementation)
 

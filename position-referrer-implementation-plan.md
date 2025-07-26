@@ -15,19 +15,19 @@ This document outlines the implementation plan for adding referrer fee functiona
 
 ### Core Components
 1. **Multi-Contract Architecture**: Multiple independent NonfungiblePositionManager contracts can operate with different referrer configurations
-2. **Hybrid Storage Pattern**: Referrer fees stored in pools like protocol fees (separate accumulation per NonfungiblePositionManager contract)
+2. **PositionManager-Level Referrer Lookup**: Referrer fees retrieved from PositionManager contract on-demand, not stored in positions
 3. **Position Fee Integration**: Extract referrer fees during existing position fee calculations (no separate functions)
 4. **Contract-Level Tracking**: Each position tracks which NonfungiblePositionManager contract created it (immutable)
 5. **Self-Managed Configuration**: Each NonfungiblePositionManager contract configures its own referrer address and fee rate
-6. **Direct Pool Collection**: NonfungiblePositionManager contracts collect directly from pools like `collectProtocol()`
+6. **Dynamic Fee Retrieval**: Referrer fee rates obtained from PositionManager at time of fee calculation
 7. **Contract Authorization**: Only the original NonfungiblePositionManager contract can modify positions it created
 8. **Unchanged LP Flow**: `collect()` function remains completely unchanged for position owners
 
 ### Key Features
 - **Multi-Contract Support**: Multiple NonfungiblePositionManager contracts operate independently
 - **Contract-Based Configuration**: Each NonfungiblePositionManager contract sets its own referrer and fee rate
-- **Hybrid Pattern**: Combines protocol fee storage with position fee calculation integration
-- **Pool-Centric Storage**: Separate fee accumulation per NonfungiblePositionManager contract per pool
+- **On-Demand Fee Lookup**: Referrer fees retrieved from PositionManager when needed, not stored with position data
+- **Dynamic Configuration**: Changes to PositionManager referrer settings affect all existing positions from that manager
 - **Position Fee Integration**: Referrer fees extracted during existing position fee calculations
 - **Direct Collection**: NonfungiblePositionManager contracts collect from pools like `collectProtocol()`
 - **Contract Authorization**: Only the original NonfungiblePositionManager contract can modify positions it created
@@ -93,14 +93,15 @@ The position manager referrer fee system involves 9 key user flows:
 ### **Flow 3: Position Updates through Original NonfungiblePositionManager**
 ```
 1. User calls increaseLiquidity(params) or decreaseLiquidity(params) → NonfungiblePositionManager
-2. NonfungiblePositionManager loads stored position data
-3. NonfungiblePositionManager calls pool operation → UniswapV3Pool
-4. Pool checks: require(positions[positionKey].positionManager == msg.sender)
+2. NonfungiblePositionManager loads position data (without referrer fee storage)
+3. NonfungiblePositionManager retrieves current referrer config from itself
+4. NonfungiblePositionManager calls pool operation → UniswapV3Pool
+5. Pool checks: require(positions[positionKey].positionManager == msg.sender)
    - Only the original NonfungiblePositionManager contract can modify the position
-5. Core pool calls _updatePosition() with NonfungiblePositionManager address and fee rate
-6. _updatePosition() extracts referrer fees for this NonfungiblePositionManager
-7. Additional referrer fees accumulated in pool storage
-8. Position updated
+6. Core pool calls _updatePosition() with NonfungiblePositionManager address and current fee rate
+7. _updatePosition() extracts referrer fees for this NonfungiblePositionManager
+8. Additional referrer fees accumulated in pool storage
+9. Position updated
 ```
 
 ### **Flow 4: Referrer Fee Calculation & Storage (During Any Swap)**
