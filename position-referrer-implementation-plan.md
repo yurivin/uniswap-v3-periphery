@@ -193,7 +193,7 @@ The position manager referrer fee system involves 9 key user flows:
 ```
 1. Pool needs referrer address for fee collection
 2. Pool calls the NonfungiblePositionManager contract that's calling it:
-   INonfungiblePositionManager(msg.sender).positionManagerReferrers()
+   INonfungiblePositionManager(msg.sender).getReferrerConfig()
 3. NonfungiblePositionManager returns its configured referrer address
 4. Pool transfers fees directly to that referrer
 5. Each NonfungiblePositionManager contract manages its own referrer configuration
@@ -348,7 +348,7 @@ function collectPositionManagerFee()
     amount1 = positionManagerFees[positionManager].token1;
     
     // Get referrer address from periphery
-    address referrer = INonfungiblePositionManager(nftContract).positionManagerReferrers(positionManager);
+    (address referrer, ) = INonfungiblePositionManager(positionManager).getReferrerConfig();
     require(referrer != address(0), "No referrer configured");
     
     if (amount0 > 0) {
@@ -376,10 +376,15 @@ function getPositionManagerFee()
 }
 ```
 
-### 5. Updated Mint Function (Modify Existing)
+### 5. PositionManager Mint Function (No Changes Required)
 
 ```solidity
-/// @inheritdoc INonfungiblePositionManager
+// PositionManager mint() function remains UNCHANGED in two-level architecture
+// The existing mint() function continues to work exactly as before
+// NO modifications needed to PositionManager Position struct
+// Pool-level position tracking will be handled in core contracts during pool.mint() calls
+
+/// @inheritdoc INonfungiblePositionManager  
 function mint(MintParams calldata params)
     external
     payable
@@ -387,29 +392,9 @@ function mint(MintParams calldata params)
     checkDeadline(params.deadline)
     returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
 {
-    // Existing mint logic...
-    
-    // NEW: Set position manager and referrer fee rate
-    address positionManager = msg.sender;
-    uint24 referrerFeeRate = positionManagerFeeRates[positionManager];
-    
-    _positions[tokenId] = Position({
-        nonce: uint96(tokenId),
-        operator: address(0),
-        poolId: poolId,
-        tickLower: params.tickLower,
-        tickUpper: params.tickUpper,
-        liquidity: liquidity,
-        feeGrowthInside0LastX128: 0,
-        feeGrowthInside1LastX128: 0,
-        tokensOwed0: 0,
-        tokensOwed1: 0,
-        positionManager: positionManager,        // IMMUTABLE after creation
-        referrerFeeRate: referrerFeeRate         // Set from position manager config
-    });
-    
-    // Emit tracking event
-    emit PositionCreated(tokenId, positionManager, referrerFeeRate);
+    // Existing mint logic remains completely unchanged
+    // PositionManager Position struct: NO referrer fields added
+    // Pool integration will be handled at the pool level
 }
 ```
 
