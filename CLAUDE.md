@@ -11,12 +11,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Testing**: 6 comprehensive test files with 100+ test cases covering security, integration, and gas analysis
 - **Documentation**: Complete with deployment guides and technical implementation details
 
-### 📋 PLANNED - Position Manager Referrer Fees  
-- **Status**: Comprehensive planning and analysis complete, implementation not started
-- **Approach**: PositionManager-level referrer fee lookup (positions don't store referrer fee data)
-- **Architecture**: Referrer fees retrieved from PositionManager contract on-demand rather than stored in position
-- **Current State**: Extensive documentation and implementation plan available
-- **Branch**: `ImplementPositionManager` (planning phase, not implementation)
+### 🚧 IN PROGRESS - Position Manager Referrer Fees  
+- **Status**: PositionManager implementation complete, pool integration pending
+- **Approach**: Two-level storage architecture (PositionManager + Pool coordination)
+- **Architecture**: PositionManager stores referrer config, Pool stores positionManager address per position
+- **Implementation**: Referrer functions added to PositionManager with owner-only access control
+- **Dynamic Lookup**: Pool calls `positionManager.getReferrerConfig()` for real-time fee rates
+- **Current State**: PositionManager complete, requires core pool contract modifications
 
 ## Build Commands
 

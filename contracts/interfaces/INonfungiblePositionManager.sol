@@ -176,4 +176,22 @@ interface INonfungiblePositionManager is
     /// must be collected first.
     /// @param tokenId The ID of the token that is being burned
     function burn(uint256 tokenId) external payable;
+
+    /// @notice Set the referrer address for this position manager
+    /// @param _referrer The address to receive referrer fees
+    function setReferrer(address _referrer) external;
+
+    /// @notice Set the referrer fee rate for this position manager
+    /// @param _feeRate The fee rate in basis points (0-500 = 0%-5%)
+    function setReferrerFeeRate(uint24 _feeRate) external;
+
+    /// @notice Get the current referrer configuration
+    /// @return referrerAddress The current referrer address
+    /// @return feeRate The current fee rate in basis points
+    function getReferrerConfig() external view returns (address referrerAddress, uint24 feeRate);
+
+    /// @notice Calculate the referrer fee for a given amount
+    /// @param amount The amount to calculate the fee for
+    /// @return fee The referrer fee amount
+    function calculateReferrerFee(uint256 amount) external view returns (uint256 fee);
 }

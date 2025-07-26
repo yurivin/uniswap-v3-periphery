@@ -5,6 +5,7 @@ pragma abicoder v2;
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol';
 import '@uniswap/v3-core/contracts/libraries/FixedPoint128.sol';
 import '@uniswap/v3-core/contracts/libraries/FullMath.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
 
 import './interfaces/INonfungiblePositionManager.sol';
 import './interfaces/INonfungibleTokenPositionDescriptor.sol';
@@ -28,7 +29,8 @@ contract NonfungiblePositionManager is
     PoolInitializer,
     LiquidityManagement,
     PeripheryValidation,
-    SelfPermit
+    SelfPermit,
+    Ownable
 {
     // details about the uniswap position
     struct Position {
@@ -59,6 +61,14 @@ contract NonfungiblePositionManager is
 
     /// @dev The token ID position data
     mapping(uint256 => Position) private _positions;
+
+    /// @dev Referrer configuration for this position manager
+    address public referrer;
+    uint24 public referrerFeeRate; // in basis points (0-500 = 0%-5%)
+
+    // Events for referrer configuration changes
+    event ReferrerChanged(address indexed oldReferrer, address indexed newReferrer);
+    event ReferrerFeeRateChanged(uint24 oldFeeRate, uint24 newFeeRate);
 
     /// @dev The ID of the next token that will be minted. Skips 0
     uint176 private _nextId = 1;
@@ -396,5 +406,41 @@ contract NonfungiblePositionManager is
     function _approve(address to, uint256 tokenId) internal override(ERC721) {
         _positions[tokenId].operator = to;
         emit Approval(ownerOf(tokenId), to, tokenId);
+    }
+
+    /// @notice Set the referrer address for this position manager
+    /// @dev Only the contract owner can call this function
+    /// @param _referrer The address to receive referrer fees
+    function setReferrer(address _referrer) external override onlyOwner {
+        address oldReferrer = referrer;
+        referrer = _referrer;
+        emit ReferrerChanged(oldReferrer, _referrer);
+    }
+
+    /// @notice Set the referrer fee rate for this position manager
+    /// @dev Only the contract owner can call this function
+    /// @param _feeRate The fee rate in basis points (0-500 = 0%-5%)
+    function setReferrerFeeRate(uint24 _feeRate) external override onlyOwner {
+        require(_feeRate <= 500, 'Fee rate too high'); // Max 5%
+        uint24 oldFeeRate = referrerFeeRate;
+        referrerFeeRate = _feeRate;
+        emit ReferrerFeeRateChanged(oldFeeRate, _feeRate);
+    }
+
+    /// @notice Get the current referrer configuration
+    /// @return referrerAddress The current referrer address
+    /// @return feeRate The current fee rate in basis points
+    function getReferrerConfig() external view override returns (address referrerAddress, uint24 feeRate) {
+        return (referrer, referrerFeeRate);
+    }
+
+    /// @notice Calculate the referrer fee for a given amount
+    /// @param amount The amount to calculate the fee for
+    /// @return fee The referrer fee amount
+    function calculateReferrerFee(uint256 amount) external view override returns (uint256 fee) {
+        if (referrer == address(0) || referrerFeeRate == 0) {
+            return 0;
+        }
+        return (amount * referrerFeeRate) / 10000;
     }
 }
