@@ -208,4 +208,54 @@ function collectPositionManagerFee(address positionManager) external {
 }
 ```
 
+### Phase 4: Simplified Two-Level Architecture (FINAL)
+**Date**: Current implementation phase
+**Decision**: Simplified storage approach with dynamic referrer lookup
+
+**Architecture Change**:
+```
+Previous: Store referrerFeeRate in Position struct (both PositionManager and Pool)
+Final: Store referrer config only in PositionManager, retrieve dynamically
+```
+
+**Key Realizations**:
+1. **PositionManager scope**: Each PositionManager only manages positions it created
+2. **Dynamic lookup efficiency**: Pool can call `msg.sender.getReferrerConfig()` when needed
+3. **Real-time updates**: Changes to PositionManager referrer config immediately affect all positions
+4. **Storage optimization**: No duplication of referrer data in position storage
+
+**Final Implementation**:
+```solidity
+// PositionManager (periphery) - IMPLEMENTED
+contract NonfungiblePositionManager {
+    address public referrer;
+    uint24 public referrerFeeRate;
+    
+    function getReferrerConfig() external view returns (address, uint24);
+    function setReferrer(address _referrer) external onlyOwner;
+    // Position struct unchanged from original Uniswap V3
+}
+
+// Pool (core) - PENDING IMPLEMENTATION  
+contract UniswapV3Pool {
+    struct Position {
+        // ... existing fields ...
+        address positionManager;  // NEW: Track which PositionManager created position
+        // NO referrerFeeRate stored - retrieved dynamically
+    }
+    
+    function _updatePosition() internal {
+        (address referrer, uint24 feeRate) = position.positionManager.getReferrerConfig();
+        // Use current config for fee calculation
+    }
+}
+```
+
+**Benefits of Final Architecture**:
+- ✅ **Backward compatibility**: PositionManager Position struct unchanged
+- ✅ **Real-time configuration**: Referrer changes immediately affect all positions
+- ✅ **Storage efficiency**: No data duplication
+- ✅ **Self-contained**: Each PositionManager manages its own referrer settings
+- ✅ **Authorization**: Pool verifies `msg.sender == position.positionManager`
+
 This log preserves the complete design evolution for future reference and architectural decisions.

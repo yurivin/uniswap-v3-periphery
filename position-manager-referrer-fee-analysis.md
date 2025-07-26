@@ -1,5 +1,12 @@
 # NonfungiblePositionManager Referrer Fee Integration Analysis
 
+## Document Purpose
+**This document provides technical feasibility analysis and architectural reasoning for Position Manager referrer fees.** It examines existing Uniswap V3 fee mechanisms, identifies implementation challenges, and validates the technical approach. For concrete implementation details, code examples, and development workflows, see `position-referrer-implementation-plan.md`.
+
+**Target Audience**: Technical architects, protocol designers, and developers evaluating feasibility
+**Scope**: Technical analysis, architectural decisions, challenge identification
+**Companion Document**: `position-referrer-implementation-plan.md` (implementation details)
+
 ## Overview
 This document analyzes the integration of referrer fee functionality into Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create, with fees extracted during swap fee calculations. **Referrer fees are retrieved dynamically from PositionManager contracts rather than stored with position data.**
 
@@ -99,15 +106,17 @@ struct Position {
     uint128 tokensOwed1;
 }
 
-// Required: Extended tracking with position manager referrer
+// Required: Pool-level tracking of position manager (two-level architecture)
+// PositionManager Position struct: UNCHANGED
+// Pool Position struct: Enhanced with positionManager tracking
 struct Position {
     uint128 liquidity;
     uint256 feeGrowthInside0LastX128;
     uint256 feeGrowthInside1LastX128;
     uint128 tokensOwed0;
     uint128 tokensOwed1;
-    address positionManager;        // NEW: Track position manager
-    uint8 referrerFeeRate;          // NEW: Fee rate for this position's manager
+    address positionManager;        // NEW: Track which PositionManager created position
+    // NOTE: referrerFeeRate retrieved dynamically via positionManager.getReferrerConfig()
 }
 ```
 
@@ -126,11 +135,17 @@ function distributeFees(uint256 feeAmount0, uint256 feeAmount1, uint128 totalAct
     uint256 totalReferrerFee0 = 0;
     for (each active position) {
         uint256 positionFee = (remainingFee0 * position.liquidity) / totalActiveLiquidity;
-        uint256 referrerFee = positionFee * position.referrerFeeRate / 255;
-        totalReferrerFee0 += referrerFee;
         
-        // Send referrer fee to position manager
-        // Reduce position fee by referrer fee
+        // Dynamic lookup: get current referrer config from position manager
+        (address referrer, uint24 referrerFeeRate) = position.positionManager.getReferrerConfig();
+        
+        if (referrer != address(0)) {
+            uint256 referrerFee = positionFee * referrerFeeRate / 10000;
+            totalReferrerFee0 += referrerFee;
+            
+            // Accumulate referrer fee for position manager
+            // Reduce position fee by referrer fee
+        }
     }
     
     // 3. Distribute remaining fees to LPs
@@ -314,9 +329,10 @@ The Uniswap V3 fee distribution mechanism can be extended to support position ma
 
 ## Recommended Implementation Strategy
 
-### Phase 1: Hybrid Pattern Integration (Recommended)
-1. Add `positionManager` and `referrerFeeRate` fields to Position struct
-2. Implement position manager configuration in NonFungiblePositionManager (no factory whitelist)
+### Phase 1: Two-Level Architecture Integration (Recommended)
+1. Add `positionManager` field to Pool Position struct (core contracts)
+2. Implement PositionManager referrer configuration (periphery contracts - COMPLETED)
+3. Implement dynamic referrer lookup: `positionManager.getReferrerConfig()`
 3. Add pool storage for position manager referrer fees (like protocol fees)
 4. Integrate referrer fee extraction into existing `_updatePosition()` function
 5. Add `collectPositionManagerFee()` function (keep `collect()` unchanged)

@@ -1,5 +1,12 @@
 # NonfungiblePositionManager Referrer Fee Implementation Plan
 
+## Document Purpose
+**This document provides concrete implementation guidance for Position Manager referrer fees.** It contains detailed code examples, step-by-step workflows, implementation components, and development task breakdowns. For technical feasibility analysis and architectural reasoning, see `position-manager-referrer-fee-analysis.md`.
+
+**Target Audience**: Developers implementing the feature, code reviewers, and development teams
+**Scope**: Code implementation, workflows, task planning, deployment guidance  
+**Companion Document**: `position-manager-referrer-fee-analysis.md` (technical analysis)
+
 ## Overview
 This document outlines the implementation plan for adding referrer fee functionality to Uniswap V3 NonfungiblePositionManager contracts. The system allows multiple independent NonfungiblePositionManager contract deployments to earn referrer fees from positions they create. Referrer fees are extracted during swap fee calculations (like protocol fees) and provide economic incentives for position management services.
 
@@ -15,12 +22,12 @@ This document outlines the implementation plan for adding referrer fee functiona
 
 ### Core Components
 1. **Multi-Contract Architecture**: Multiple independent NonfungiblePositionManager contracts can operate with different referrer configurations
-2. **PositionManager-Level Referrer Lookup**: Referrer fees retrieved from PositionManager contract on-demand, not stored in positions
-3. **Position Fee Integration**: Extract referrer fees during existing position fee calculations (no separate functions)
-4. **Contract-Level Tracking**: Each position tracks which NonfungiblePositionManager contract created it (immutable)
-5. **Self-Managed Configuration**: Each NonfungiblePositionManager contract configures its own referrer address and fee rate
-6. **Dynamic Fee Retrieval**: Referrer fee rates obtained from PositionManager at time of fee calculation
-7. **Contract Authorization**: Only the original NonfungiblePositionManager contract can modify positions it created
+2. **Simplified Position Storage**: Positions store only original Uniswap data - no referrer-specific fields
+3. **Self-Contained Referrer Config**: Each PositionManager stores its own referrer and fee rate
+4. **Dynamic Fee Lookup**: Referrer fees retrieved from PositionManager's own storage when needed
+5. **Contract-Level Management**: Each PositionManager only manages positions it created
+6. **Owner-Controlled Configuration**: Only contract owner can modify referrer settings
+7. **Real-Time Updates**: Changes to referrer config immediately affect all positions from that manager
 8. **Unchanged LP Flow**: `collect()` function remains completely unchanged for position owners
 
 ### Key Features
@@ -80,28 +87,31 @@ The position manager referrer fee system involves 9 key user flows:
 ### **Flow 2: Position Creation through NonfungiblePositionManager**
 ```
 1. User calls mint(params) → NonfungiblePositionManager contract (periphery)
-2. NonfungiblePositionManager reads its own configuration (referrer, fee rate)
-3. NonfungiblePositionManager calls pool.mint(..., address(this), referrerFeeRate) → UniswapV3Pool (core)
-   - address(this) = the NonfungiblePositionManager contract address
-4. Core pool.mint() calls _updatePosition(..., nftManagerAddress, referrerFeeRate)
-5. _updatePosition() extracts referrer fees and stores them for nftManagerAddress
-6. Position created with positionManager = NonfungiblePositionManager contract address
-7. Pool tracks which NonfungiblePositionManager contract created each position
-8. Emit PositionCreated event
+2. NonfungiblePositionManager creates position in its own storage (standard Position struct)
+3. NonfungiblePositionManager calls pool.mint() → UniswapV3Pool (core)
+4. Pool creates position with: positions[positionKey].positionManager = msg.sender
+   - Pool stores which PositionManager created this position
+5. Pool retrieves current referrer config: (referrer, feeRate) = msg.sender.getReferrerConfig()
+   - Dynamic lookup gets real-time referrer configuration
+6. Pool calls _updatePosition() with current referrer address and fee rate  
+7. If referrer != address(0): _updatePosition() extracts referrer fees for this PositionManager
+8. Position created in both PositionManager storage and Pool storage
+9. Emit PositionCreated event
 ```
 
 ### **Flow 3: Position Updates through Original NonfungiblePositionManager**
 ```
 1. User calls increaseLiquidity(params) or decreaseLiquidity(params) → NonfungiblePositionManager
-2. NonfungiblePositionManager loads position data (without referrer fee storage)
-3. NonfungiblePositionManager retrieves current referrer config from itself
-4. NonfungiblePositionManager calls pool operation → UniswapV3Pool
-5. Pool checks: require(positions[positionKey].positionManager == msg.sender)
-   - Only the original NonfungiblePositionManager contract can modify the position
-6. Core pool calls _updatePosition() with NonfungiblePositionManager address and current fee rate
-7. _updatePosition() extracts referrer fees for this NonfungiblePositionManager
-8. Additional referrer fees accumulated in pool storage
-9. Position updated
+2. NonfungiblePositionManager loads position data (standard Uniswap position struct - no referrer fields)
+3. NonfungiblePositionManager calls pool operation → UniswapV3Pool  
+4. Pool checks authorization: require(positions[positionKey].positionManager == msg.sender)
+   - Only the original NonfungiblePositionManager contract can modify positions it created
+5. Pool retrieves current referrer config: (referrer, feeRate) = msg.sender.getReferrerConfig()
+   - Dynamic lookup gets real-time referrer configuration from calling PositionManager
+6. Pool calls _updatePosition() with current referrer address and fee rate
+7. _updatePosition() extracts referrer fees for this PositionManager if referrer != address(0)
+8. Referrer fees accumulated in pool storage per PositionManager
+9. Position updated with latest fee calculations
 ```
 
 ### **Flow 4: Referrer Fee Calculation & Storage (During Any Swap)**
@@ -195,9 +205,12 @@ The position manager referrer fee system involves 9 key user flows:
 
 ## Implementation Components
 
-### 1. Enhanced Position Struct
+### 1. Two-Level Storage Architecture
+
+#### A. PositionManager Level (Periphery) - Position Struct Unchanged
 
 ```solidity
+// PositionManager Position struct remains unchanged from original Uniswap V3
 struct Position {
     uint96 nonce;
     address operator;
@@ -209,35 +222,53 @@ struct Position {
     uint256 feeGrowthInside1LastX128;
     uint128 tokensOwed0;
     uint128 tokensOwed1;
-    address positionManager;     // NEW: Position manager (set once at creation, immutable, controls position)
-    uint24 referrerFeeRate;      // NEW: Fee rate in basis points (0-10000, 100% max)
+    // NO referrer-specific fields added - referrer config retrieved dynamically
 }
 ```
 
-### 2. Position Manager Configuration, Authorization, and Fee Collection
+#### B. Pool Level (Core) - Enhanced Position Storage Required
 
 ```solidity
-// Self-managed configuration (instance variables per contract)
-address public positionManagerReferrer;        // This contract's referrer
-uint24 public positionManagerFeeRate;          // This contract's fee rate
+// Pool position storage (in uniswap-v3-core) needs enhancement
+struct Position {
+    uint128 liquidity;
+    uint256 feeGrowthInside0LastX128;
+    uint256 feeGrowthInside1LastX128;
+    uint128 tokensOwed0;
+    uint128 tokensOwed1;
+    address positionManager;  // NEW: Track which PositionManager created this position
+}
+```
 
-/// @notice Modifier to ensure only position manager can modify their positions
-modifier onlyPositionManager(uint256 tokenId) {
-    require(_positions[tokenId].positionManager == msg.sender, "Not position manager");
-    _;
+**Key Architecture Points:**
+- **PositionManager**: Stores referrer config, Position struct unchanged
+- **Pool**: Stores `positionManager` address per position for authorization and dynamic lookup
+- **Dynamic Referrer Lookup**: Pool calls `positionManager.getReferrerConfig()` when needed
+
+### 2. Position Manager Self-Contained Configuration
+
+```solidity
+// Self-contained referrer configuration per PositionManager contract
+address public referrer;           // This contract's referrer address  
+uint24 public referrerFeeRate;     // This contract's fee rate (0-500 basis points = 0%-5%)
+
+/// @notice Set referrer address for this PositionManager contract
+/// @dev Only callable by contract owner. Affects ALL positions from this contract.
+/// @param _referrer Address to receive referrer fees
+function setReferrer(address _referrer) external onlyOwner {
+    address oldReferrer = referrer;
+    referrer = _referrer;
+    emit ReferrerChanged(oldReferrer, _referrer);
 }
 
-/// @notice Set referrer address for this NonfungiblePositionManager contract
-/// @dev Only callable by contract owner/admin. Sets referrer for ALL positions created by this contract.
-/// @param referrer Address to receive referrer fees (can be EOA or contract)
-function setPositionManagerReferrer(address referrer) external onlyOwner;
-
-/// @notice Set referrer fee rate for this NonfungiblePositionManager contract
-/// @dev Only callable by contract owner/admin. Applies to ALL positions created by this contract.
-/// @param feeRate Fee rate in basis points (0-10000, max 100%)
-function setPositionManagerFeeRate(uint24 feeRate) external onlyOwner {
-    require(feeRate <= 10000, "Fee rate exceeds 100%");
-    // Implementation...
+/// @notice Set referrer fee rate for this PositionManager contract  
+/// @dev Only callable by contract owner. Applies to ALL positions from this contract.
+/// @param _feeRate Fee rate in basis points (0-500 = 0%-5%)
+function setReferrerFeeRate(uint24 _feeRate) external onlyOwner {
+    require(_feeRate <= 500, 'Fee rate too high'); // Max 5%
+    uint24 oldFeeRate = referrerFeeRate;
+    referrerFeeRate = _feeRate;
+    emit ReferrerFeeRateChanged(oldFeeRate, _feeRate);
 }
 
 /// @notice Collect accumulated referrer fees from a specific pool
