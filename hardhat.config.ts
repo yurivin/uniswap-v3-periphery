@@ -4,6 +4,20 @@ import '@nomiclabs/hardhat-waffle'
 import 'hardhat-typechain'
 import 'hardhat-watcher'
 
+const VERY_LOW_OPTIMIZER_COMPILER_SETTINGS = {
+  version: '0.7.6',
+  settings: {
+    evmVersion: 'istanbul',
+    optimizer: {
+      enabled: true,
+      runs: 200,
+    },
+    metadata: {
+      bytecodeHash: 'none',
+    },
+  },
+}
+
 const LOW_OPTIMIZER_COMPILER_SETTINGS = {
   version: '0.7.6',
   settings: {
@@ -87,7 +101,7 @@ export default {
   solidity: {
     compilers: [DEFAULT_COMPILER_SETTINGS],
     overrides: {
-      'contracts/NonfungiblePositionManager.sol': LOW_OPTIMIZER_COMPILER_SETTINGS,
+      'contracts/NonfungiblePositionManager.sol': VERY_LOW_OPTIMIZER_COMPILER_SETTINGS,
       'contracts/test/MockTimeNonfungiblePositionManager.sol': LOW_OPTIMIZER_COMPILER_SETTINGS,
       'contracts/test/NFTDescriptorTest.sol': LOWEST_OPTIMIZER_COMPILER_SETTINGS,
       'contracts/NonfungibleTokenPositionDescriptor.sol': LOWEST_OPTIMIZER_COMPILER_SETTINGS,

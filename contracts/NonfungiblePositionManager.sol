@@ -3,9 +3,11 @@ pragma solidity =0.7.6;
 pragma abicoder v2;
 
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol';
+import './interfaces/IUniswapV3PoolWithPositionManagerFees.sol';
 import '@uniswap/v3-core/contracts/libraries/FixedPoint128.sol';
 import '@uniswap/v3-core/contracts/libraries/FullMath.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/token/ERC721/ERC721.sol';
 
 import './interfaces/INonfungiblePositionManager.sol';
 import './interfaces/INonfungibleTokenPositionDescriptor.sol';
@@ -14,7 +16,6 @@ import './libraries/PoolAddress.sol';
 import './base/LiquidityManagement.sol';
 import './base/PeripheryImmutableState.sol';
 import './base/Multicall.sol';
-import './base/ERC721Permit.sol';
 import './base/PeripheryValidation.sol';
 import './base/SelfPermit.sol';
 import './base/PoolInitializer.sol';
@@ -24,7 +25,7 @@ import './base/PoolInitializer.sol';
 contract NonfungiblePositionManager is
     INonfungiblePositionManager,
     Multicall,
-    ERC721Permit,
+    ERC721,
     PeripheryImmutableState,
     PoolInitializer,
     LiquidityManagement,
@@ -34,7 +35,7 @@ contract NonfungiblePositionManager is
 {
     // details about the uniswap position
     struct Position {
-        // the nonce for permits
+        // the nonce for token operations
         uint96 nonce;
         // the address that is approved for spending this token
         address operator;
@@ -82,7 +83,7 @@ contract NonfungiblePositionManager is
         address _factory,
         address _WETH9,
         address _tokenDescriptor_
-    ) ERC721Permit('Uniswap V3 Positions NFT-V1', 'UNI-V3-POS', '1') PeripheryImmutableState(_factory, _WETH9) {
+    ) ERC721('Uniswap V3 Positions NFT-V1', 'UNI-V3-POS') PeripheryImmutableState(_factory, _WETH9) {
         _tokenDescriptor = _tokenDescriptor_;
     }
 
@@ -391,9 +392,6 @@ contract NonfungiblePositionManager is
         _burn(tokenId);
     }
 
-    function _getAndIncrementNonce(uint256 tokenId) internal override returns (uint256) {
-        return uint256(_positions[tokenId].nonce++);
-    }
 
     /// @inheritdoc IERC721
     function getApproved(uint256 tokenId) public view override(ERC721, IERC721) returns (address) {
@@ -402,7 +400,7 @@ contract NonfungiblePositionManager is
         return _positions[tokenId].operator;
     }
 
-    /// @dev Overrides _approve to use the operator in the position, which is packed with the position permit nonce
+    /// @dev Overrides _approve to use the operator in the position
     function _approve(address to, uint256 tokenId) internal override(ERC721) {
         _positions[tokenId].operator = to;
         emit Approval(ownerOf(tokenId), to, tokenId);
@@ -443,4 +441,21 @@ contract NonfungiblePositionManager is
         }
         return (amount * referrerFeeRate) / 10000;
     }
+
+    /// @notice Collect accumulated referrer fees from a specific pool
+    /// @dev Only callable by contract owner. Fees sent directly to configured referrer.
+    /// @param poolAddress The pool to collect fees from
+    /// @return amount0 Amount of token0 collected and sent to referrer
+    /// @return amount1 Amount of token1 collected and sent to referrer
+    function collectFeesFromPool(address poolAddress) 
+        external 
+        override
+        onlyOwner 
+        returns (uint128 amount0, uint128 amount1)
+    {
+        require(referrer != address(0), 'No referrer configured');
+        // Call pool to collect fees - pool will send directly to our configured referrer
+        return IUniswapV3PoolWithPositionManagerFees(poolAddress).collectPositionManagerFee();
+    }
+
 }

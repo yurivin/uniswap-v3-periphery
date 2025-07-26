@@ -1,0 +1,5 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`SwapRouter Referrer Gas Usage Tests Configuration Gas Costs setReferrer gas cost 1`] = `47623`;
+
+exports[`SwapRouter Referrer Gas Usage Tests Configuration Gas Costs setReferrerFee gas cost 1`] = `47333`;

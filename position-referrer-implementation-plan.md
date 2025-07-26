@@ -502,8 +502,8 @@ event PositionManagerFeeCollectedMultiple(
 - ✅ Implemented `setReferrerFeeRate(uint24 _feeRate)` function with `onlyOwner` modifier
 - ✅ Added validation: `require(_feeRate <= 500, 'Fee rate too high')` (max 5%)
 - ✅ Proper event emission for configuration changes
-- ❌ Fee collection functions (deferred to pool integration phase)
-- ❌ Position modification authorization (not needed in two-level architecture)
+- ✅ Fee collection functions (`collectFeesFromPool` and `collectFeesFromPools` implemented with comprehensive testing)
+- ✅ Position modification authorization (required to ensure only original PositionManager can modify positions it created)
 
 **✅ Task 3: Position Manager Configuration Storage [PERIPHERY] - COMPLETED**
 - **Contract**: `NonfungiblePositionManager.sol`

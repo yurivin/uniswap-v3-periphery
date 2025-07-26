@@ -6,7 +6,6 @@ import '@openzeppelin/contracts/token/ERC721/IERC721Metadata.sol';
 import '@openzeppelin/contracts/token/ERC721/IERC721Enumerable.sol';
 
 import './IPoolInitializer.sol';
-import './IERC721Permit.sol';
 import './IPeripheryPayments.sol';
 import './IPeripheryImmutableState.sol';
 
@@ -18,8 +17,7 @@ interface INonfungiblePositionManager is
     IPeripheryPayments,
     IPeripheryImmutableState,
     IERC721Metadata,
-    IERC721Enumerable,
-    IERC721Permit
+    IERC721Enumerable
 {
     /// @notice Emitted when liquidity is increased for a position NFT
     /// @dev Also emitted when a token is minted
@@ -45,7 +43,7 @@ interface INonfungiblePositionManager is
     /// @notice Returns the position information associated with a given token ID.
     /// @dev Throws if the token ID is not valid.
     /// @param tokenId The ID of the token that represents the position
-    /// @return nonce The nonce for permits
+    /// @return nonce The nonce for token operations
     /// @return operator The address that is approved for spending
     /// @return token0 The address of the token0 for a specific pool
     /// @return token1 The address of the token1 for a specific pool
@@ -194,4 +192,11 @@ interface INonfungiblePositionManager is
     /// @param amount The amount to calculate the fee for
     /// @return fee The referrer fee amount
     function calculateReferrerFee(uint256 amount) external view returns (uint256 fee);
+
+    /// @notice Collect accumulated referrer fees from a specific pool
+    /// @param poolAddress The pool to collect fees from
+    /// @return amount0 Amount of token0 collected and sent to referrer
+    /// @return amount1 Amount of token1 collected and sent to referrer
+    function collectFeesFromPool(address poolAddress) external returns (uint128 amount0, uint128 amount1);
+
 }
