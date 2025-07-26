@@ -3,6 +3,7 @@ pragma solidity =0.7.6;
 pragma abicoder v2;
 
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol';
+import './interfaces/IUniswapV3PoolWithPositionManagerFees.sol';
 import '@uniswap/v3-core/contracts/libraries/FixedPoint128.sol';
 import '@uniswap/v3-core/contracts/libraries/FullMath.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
@@ -442,5 +443,41 @@ contract NonfungiblePositionManager is
             return 0;
         }
         return (amount * referrerFeeRate) / 10000;
+    }
+
+    /// @notice Collect accumulated referrer fees from a specific pool
+    /// @dev Only callable by contract owner. Fees sent directly to configured referrer.
+    /// @param poolAddress The pool to collect fees from
+    /// @return amount0 Amount of token0 collected and sent to referrer
+    /// @return amount1 Amount of token1 collected and sent to referrer
+    function collectFeesFromPool(address poolAddress) 
+        external 
+        override
+        onlyOwner 
+        returns (uint128 amount0, uint128 amount1)
+    {
+        require(referrer != address(0), 'No referrer configured');
+        // Call pool to collect fees - pool will send directly to our configured referrer
+        return IUniswapV3PoolWithPositionManagerFees(poolAddress).collectPositionManagerFee();
+    }
+
+    /// @notice Collect accumulated referrer fees from multiple pools
+    /// @dev Only callable by contract owner. Fees sent directly to configured referrer.
+    /// @param poolAddresses Array of pools to collect fees from
+    /// @return amounts0 Array of token0 amounts collected per pool
+    /// @return amounts1 Array of token1 amounts collected per pool
+    function collectFeesFromPools(address[] calldata poolAddresses)
+        external
+        override
+        onlyOwner
+        returns (uint128[] memory amounts0, uint128[] memory amounts1)
+    {
+        require(referrer != address(0), 'No referrer configured');
+        amounts0 = new uint128[](poolAddresses.length);
+        amounts1 = new uint128[](poolAddresses.length);
+        
+        for (uint256 i = 0; i < poolAddresses.length; i++) {
+            (amounts0[i], amounts1[i]) = IUniswapV3PoolWithPositionManagerFees(poolAddresses[i]).collectPositionManagerFee();
+        }
     }
 }

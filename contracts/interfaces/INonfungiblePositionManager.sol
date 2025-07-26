@@ -194,4 +194,16 @@ interface INonfungiblePositionManager is
     /// @param amount The amount to calculate the fee for
     /// @return fee The referrer fee amount
     function calculateReferrerFee(uint256 amount) external view returns (uint256 fee);
+
+    /// @notice Collect accumulated referrer fees from a specific pool
+    /// @param poolAddress The pool to collect fees from
+    /// @return amount0 Amount of token0 collected and sent to referrer
+    /// @return amount1 Amount of token1 collected and sent to referrer
+    function collectFeesFromPool(address poolAddress) external returns (uint128 amount0, uint128 amount1);
+
+    /// @notice Collect accumulated referrer fees from multiple pools
+    /// @param poolAddresses Array of pools to collect fees from
+    /// @return amounts0 Array of token0 amounts collected per pool
+    /// @return amounts1 Array of token1 amounts collected per pool
+    function collectFeesFromPools(address[] calldata poolAddresses) external returns (uint128[] memory amounts0, uint128[] memory amounts1);
 }
