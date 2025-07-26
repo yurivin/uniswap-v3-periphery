@@ -461,23 +461,4 @@ contract NonfungiblePositionManager is
         return IUniswapV3PoolWithPositionManagerFees(poolAddress).collectPositionManagerFee();
     }
 
-    /// @notice Collect accumulated referrer fees from multiple pools
-    /// @dev Only callable by contract owner. Fees sent directly to configured referrer.
-    /// @param poolAddresses Array of pools to collect fees from
-    /// @return amounts0 Array of token0 amounts collected per pool
-    /// @return amounts1 Array of token1 amounts collected per pool
-    function collectFeesFromPools(address[] calldata poolAddresses)
-        external
-        override
-        onlyOwner
-        returns (uint128[] memory amounts0, uint128[] memory amounts1)
-    {
-        require(referrer != address(0), 'No referrer configured');
-        amounts0 = new uint128[](poolAddresses.length);
-        amounts1 = new uint128[](poolAddresses.length);
-        
-        for (uint256 i = 0; i < poolAddresses.length; i++) {
-            (amounts0[i], amounts1[i]) = IUniswapV3PoolWithPositionManagerFees(poolAddresses[i]).collectPositionManagerFee();
-        }
-    }
 }
