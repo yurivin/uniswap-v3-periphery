@@ -38,8 +38,13 @@ describe('PositionManager Referrer Functionality', () => {
 
     it('should revert if fee rate is too high', async () => {
       await expect(
-        positionManager.connect(owner).setReferrerFeeRate(600) // 6% > 5% max
+        positionManager.connect(owner).setReferrerFeeRate(10001) // 100.01% > 100% max
       ).to.be.revertedWith('Fee rate too high')
+    })
+
+    it('should allow maximum fee rate of 100%', async () => {
+      await positionManager.connect(owner).setReferrerFeeRate(10000) // 100% max
+      expect(await positionManager.referrerFeeRate()).to.equal(10000)
     })
 
     it('should revert if non-owner tries to set referrer', async () => {
@@ -63,6 +68,17 @@ describe('PositionManager Referrer Functionality', () => {
       
       const amount = ethers.utils.parseEther('100')
       const expectedFee = amount.mul(250).div(10000) // 2.5 ETH
+      const calculatedFee = await positionManager.calculateReferrerFee(amount)
+      
+      expect(calculatedFee).to.equal(expectedFee)
+    })
+
+    it('should calculate 100% referrer fee correctly', async () => {
+      await positionManager.connect(owner).setReferrer(referrer.address)
+      await positionManager.connect(owner).setReferrerFeeRate(10000) // 100%
+      
+      const amount = ethers.utils.parseEther('100')
+      const expectedFee = amount // 100% of amount
       const calculatedFee = await positionManager.calculateReferrerFee(amount)
       
       expect(calculatedFee).to.equal(expectedFee)

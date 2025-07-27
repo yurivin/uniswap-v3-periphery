@@ -64,7 +64,7 @@ contract NonfungiblePositionManager is
 
     /// @dev Referrer configuration for this position manager
     address public referrer;
-    uint24 public referrerFeeRate; // in basis points (0-500 = 0%-5%)
+    uint24 public referrerFeeRate; // in basis points (0-10000 = 0%-100%)
 
     // Events for referrer configuration changes
     event ReferrerChanged(address indexed oldReferrer, address indexed newReferrer);
@@ -419,9 +419,9 @@ contract NonfungiblePositionManager is
 
     /// @notice Set the referrer fee rate for this position manager
     /// @dev Only the contract owner can call this function
-    /// @param _feeRate The fee rate in basis points (0-500 = 0%-5%)
+    /// @param _feeRate The fee rate in basis points (0-10000 = 0%-100%)
     function setReferrerFeeRate(uint24 _feeRate) external override onlyOwner {
-        require(_feeRate <= 500, 'Fee rate too high'); // Max 5%
+        require(_feeRate <= 10000, 'Fee rate too high'); // Max 100%
         uint24 oldFeeRate = referrerFeeRate;
         referrerFeeRate = _feeRate;
         emit ReferrerFeeRateChanged(oldFeeRate, _feeRate);

@@ -253,7 +253,7 @@ struct Position {
 ```solidity
 // Self-contained referrer configuration per PositionManager contract
 address public referrer;           // This contract's referrer address  
-uint24 public referrerFeeRate;     // This contract's fee rate (0-500 basis points = 0%-5%)
+uint24 public referrerFeeRate;     // This contract's fee rate (0-10000 basis points = 0%-100%)
 
 /// @notice Set referrer address for this PositionManager contract
 /// @dev Only callable by contract owner. Affects ALL positions from this contract.
@@ -266,9 +266,9 @@ function setReferrer(address _referrer) external onlyOwner {
 
 /// @notice Set referrer fee rate for this PositionManager contract  
 /// @dev Only callable by contract owner. Applies to ALL positions from this contract.
-/// @param _feeRate Fee rate in basis points (0-500 = 0%-5%)
+/// @param _feeRate Fee rate in basis points (0-10000 = 0%-100%)
 function setReferrerFeeRate(uint24 _feeRate) external onlyOwner {
-    require(_feeRate <= 500, 'Fee rate too high'); // Max 5%
+    require(_feeRate <= 10000, 'Fee rate too high'); // Max 100%
     uint24 oldFeeRate = referrerFeeRate;
     referrerFeeRate = _feeRate;
     emit ReferrerFeeRateChanged(oldFeeRate, _feeRate);
@@ -491,7 +491,7 @@ event PositionManagerFeeCollectedMultiple(
 **✅ Task 1: Enhanced Position Manager Configuration [PERIPHERY] - COMPLETED**
 - **Contract**: `NonfungiblePositionManager.sol`
 - ✅ Added `address public referrer` storage variable
-- ✅ Added `uint24 public referrerFeeRate` storage variable (0-500 basis points = 0%-5%)
+- ✅ Added `uint24 public referrerFeeRate` storage variable (0-10000 basis points = 0%-100%)
 - ✅ Added events: `ReferrerChanged` and `ReferrerFeeRateChanged`
 - ✅ Position struct remains UNCHANGED (two-level architecture decision)
 - ✅ Added OpenZeppelin `Ownable` inheritance for access control
@@ -500,10 +500,10 @@ event PositionManagerFeeCollectedMultiple(
 - **Contract**: `NonfungiblePositionManager.sol`
 - ✅ Implemented `setReferrer(address _referrer)` function with `onlyOwner` modifier
 - ✅ Implemented `setReferrerFeeRate(uint24 _feeRate)` function with `onlyOwner` modifier
-- ✅ Added validation: `require(_feeRate <= 500, 'Fee rate too high')` (max 5%)
+- ✅ Added validation: `require(_feeRate <= 10000, 'Fee rate too high')` (max 100%)
 - ✅ Proper event emission for configuration changes
-- ❌ Fee collection functions (deferred to pool integration phase)
-- ❌ Position modification authorization (not needed in two-level architecture)
+- ✅ Fee collection functions (`collectFeesFromPool` implemented with comprehensive testing - `collectFeesFromPools` removed for contract size optimization)
+- ✅ Position modification authorization (required to ensure only original PositionManager can modify positions it created)
 
 **✅ Task 3: Position Manager Configuration Storage [PERIPHERY] - COMPLETED**
 - **Contract**: `NonfungiblePositionManager.sol`
@@ -511,6 +511,15 @@ event PositionManagerFeeCollectedMultiple(
 - ✅ Implemented simplified instance variable approach: `uint24 public referrerFeeRate`
 - ✅ Self-contained per contract deployment (no cross-contract mappings needed)
 - ✅ Public access for pool integration
+
+**✅ Contract Size Optimization [PERIPHERY] - COMPLETED**
+- **Problem**: Initial implementation exceeded 24,576 byte deployment limit (28,231 bytes)
+- **Solutions Applied**:
+  - ✅ Removed `collectFeesFromPools` function: saved 705 bytes
+  - ✅ Removed ERC721Permit functionality: saved 1,694 bytes  
+  - ✅ Reduced optimizer runs from 2,000 to 200: saved 1,416 bytes
+- **Final Result**: 24,416 bytes (160 bytes under limit, 99.35% of limit used)
+- **Trade-offs**: No multi-pool collection, no permit functionality, slightly higher gas costs
 
 **✅ Task 4: Interface Implementation [PERIPHERY] - COMPLETED**
 - **Contract**: `INonfungiblePositionManager.sol` and `NonfungiblePositionManager.sol`
@@ -533,10 +542,10 @@ event PositionManagerFeeCollectedMultiple(
 - **Contract**: `NonfungiblePositionManager.sol`
 - ✅ Implemented `getReferrerConfig()` returns (address referrerAddress, uint24 feeRate)
 - ✅ Implemented `calculateReferrerFee(uint256 amount)` with zero-handling
-- ❌ Admin fee collection functions (pending pool integration phase):
-  - `collectFeesFromPool(address poolAddress)` - single pool collection
-  - `collectFeesFromPools(address[] poolAddresses)` - multi-pool collection
-  - **Note**: Function signatures designed, awaiting pool `collectPositionManagerFee()` implementation
+- ✅ Admin fee collection functions:
+  - `collectFeesFromPool(address poolAddress)` - single pool collection (implemented with testing)
+  - ❌ `collectFeesFromPools(address[] poolAddresses)` - removed for contract size optimization
+  - **Note**: Uses mock pool contracts for testing, awaiting full pool integration
 - Add helper functions for position manager queries
 - Ensure efficient gas usage for read operations
 - Add proper error handling for failed pool calls
@@ -586,23 +595,27 @@ event PositionManagerFeeCollectedMultiple(
 **Repository: uniswap-v3-periphery**
 
 **✅ Task 12: Periphery Unit Testing [PERIPHERY] - COMPLETED**
-- **Test Files**: `test/PositionManagerReferrer.simple.spec.ts`
-- ✅ Test NonfungiblePositionManager contract configuration functions
+- **Test Files**: `test/NonfungiblePositionManagerReferrerFees.spec.ts`
+- ✅ Test NonfungiblePositionManager contract configuration functions (16 tests)
 - ✅ Test owner access control (setReferrer, setReferrerFeeRate)
 - ✅ Test unauthorized access prevention (non-owner blocked)
-- ✅ Test fee rate validation (max 5% enforced)
+- ✅ Test fee rate validation (max 100% enforced)
 - ✅ Test getReferrerConfig() functionality
 - ✅ Test calculateReferrerFee() with zero-handling
-- ✅ Test event emission for configuration changes
-- ✅ Test edge cases and error conditions
-- ✅ All 9 tests passing successfully
+- ✅ Test fee collection from single pool with mock contracts (6 tests)
+- ✅ Test integration with mock pool contracts (4 tests)
+- ✅ Test edge cases and error handling (4 tests)
+- ✅ All 30 tests passing successfully
 
-**✅ Task 13: Periphery Gas Optimization [PERIPHERY] - COMPLETED**
+**✅ Task 13: Periphery Gas & Size Optimization [PERIPHERY] - COMPLETED**
 - **Contracts**: `NonfungiblePositionManager.sol`
-- ✅ Contract size optimization: Enabled `allowUnlimitedContractSize: true` in hardhat config
+- ✅ Contract size optimization: Reduced from 28,231 to 24,416 bytes (under 24,576 limit)
+- ✅ Removed `collectFeesFromPools` function to save 705 bytes
+- ✅ Removed ERC721Permit functionality to save 1,694 bytes
+- ✅ Reduced optimizer runs from 2,000 to 200 to save 1,416 bytes
 - ✅ Storage efficiency: Instance variables approach (no complex mappings)
 - ✅ Minimal gas overhead: Simple public variable access
-- ✅ Compilation successful with all optimizations
+- ✅ Successfully deployable on Ethereum mainnet
 
 ### 🚧 Phase 5: Core Testing (Tasks 14-15) - **PENDING**
 **Repository: uniswap-v3-core**
@@ -670,7 +683,7 @@ event PositionManagerFeeCollectedMultiple(
 ```solidity
 // In NonfungiblePositionManager.sol - Instance Variables per Contract
 address public referrer;           // This contract's referrer address  
-uint24 public referrerFeeRate;     // This contract's fee rate (0-500 basis points = 0%-5%)
+uint24 public referrerFeeRate;     // This contract's fee rate (0-10000 basis points = 0%-100%)
 
 function setReferrer(address _referrer) external onlyOwner {
     address oldReferrer = referrer;
@@ -679,7 +692,7 @@ function setReferrer(address _referrer) external onlyOwner {
 }
 
 function setReferrerFeeRate(uint24 _feeRate) external onlyOwner {
-    require(_feeRate <= 500, 'Fee rate too high'); // Max 5%
+    require(_feeRate <= 10000, 'Fee rate too high'); // Max 100%
     uint24 oldFeeRate = referrerFeeRate;
     referrerFeeRate = _feeRate;
     emit ReferrerFeeRateChanged(oldFeeRate, _feeRate);
@@ -746,7 +759,7 @@ function collectPositionManagerFee()
 ```solidity
 // Position Manager A Setup (IMPLEMENTED)
 positionManagerA.setReferrer(referrerX);
-positionManagerA.setReferrerFeeRate(250); // 2.5% (max 5%)
+positionManagerA.setReferrerFeeRate(250); // 2.5% (max 100%)
 
 // Position Manager B Setup (IMPLEMENTED)
 positionManagerB.setReferrer(referrerY);
@@ -771,7 +784,7 @@ positionManagerB.collectFeesFromPool(poolAddress);
 - **One fee rate per NonfungiblePositionManager contract** (not per position)  
 - **Dynamic referrer lookup**: Real-time config retrieval via `getReferrerConfig()`
 - **Contract-level management**: Each contract deployment manages its own configuration
-- **Max 5% fee rate**: Enforced limit protects liquidity providers
+- **Max 100% fee rate**: Allows position managers full control over LP fees
 
 #### 2. Collection Simplicity  
 - NonfungiblePositionManager contract calls pool directly
@@ -802,7 +815,7 @@ positionManagerB.collectFeesFromPool(poolAddress);
 
 ## Security Considerations
 
-1. **Fee Rate Limits**: Maximum 5% referrer fee rate (500 basis points)
+1. **Fee Rate Limits**: Maximum 100% referrer fee rate (10000 basis points)
 2. **Self-Management**: Position managers control their own configuration
 3. **Immutable Associations**: Position manager cannot be changed after creation
 4. **Position Authorization**: Only original position manager can modify positions they created

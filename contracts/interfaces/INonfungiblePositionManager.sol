@@ -182,7 +182,7 @@ interface INonfungiblePositionManager is
     function setReferrer(address _referrer) external;
 
     /// @notice Set the referrer fee rate for this position manager
-    /// @param _feeRate The fee rate in basis points (0-500 = 0%-5%)
+    /// @param _feeRate The fee rate in basis points (0-10000 = 0%-100%)
     function setReferrerFeeRate(uint24 _feeRate) external;
 
     /// @notice Get the current referrer configuration
