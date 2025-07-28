@@ -1,0 +1,5 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`PositionManager Referrer System - Current Implementation Gas Usage setReferrer has reasonable gas cost 1`] = `47763`;
+
+exports[`PositionManager Referrer System - Current Implementation Gas Usage setReferrerFeeRate has reasonable gas cost 1`] = `47436`;

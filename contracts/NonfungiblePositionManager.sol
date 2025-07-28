@@ -434,13 +434,10 @@ contract NonfungiblePositionManager is
         return (referrer, referrerFeeRate);
     }
 
-    /// @notice Calculate the referrer fee for a given amount
-    /// @param amount The amount to calculate the fee for
-    /// @return fee The referrer fee amount
-    function calculateReferrerFee(uint256 amount) external view override returns (uint256 fee) {
-        if (referrer == address(0) || referrerFeeRate == 0) {
-            return 0;
-        }
-        return (amount * referrerFeeRate) / 10000;
+    /// @notice Get the current referrer fee rate
+    /// @return feeRate The current referrer fee rate in basis points
+    function getReferrerFeeRate() external view override returns (uint24 feeRate) {
+        return referrerFeeRate;
     }
+
 }

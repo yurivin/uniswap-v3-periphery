@@ -109,7 +109,7 @@ describe('SwapRouter Referrer Functionality', () => {
         { amount: expandTo18Decimals(1000), fee: 50, expected: expandTo18Decimals(5) }, // 0.5%
         { amount: expandTo18Decimals(1000), fee: 100, expected: expandTo18Decimals(10) }, // 1%
         { amount: expandTo18Decimals(1000), fee: 500, expected: expandTo18Decimals(50) }, // 5%
-        { amount: expandTo18Decimals(100), fee: 50, expected: expandTo18Decimals(0.5) }, // 0.5%
+        { amount: expandTo18Decimals(100), fee: 50, expected: expandTo18Decimals(1).div(2) }, // 0.5%
         { amount: 1000, fee: 50, expected: 5 }, // Small amounts
       ]
 
@@ -168,8 +168,8 @@ describe('SwapRouter Referrer Functionality', () => {
 
     it('allows collecting fees for multiple tokens', async () => {
       // This test would require accumulated fees first
-      const tokens = [tokens[0].address, tokens[1].address]
-      const amounts = await router.connect(referrer).callStatic.collectReferrerFeesMultiple(tokens)
+      const tokenAddresses = [tokens[0].address, tokens[1].address]
+      const amounts = await router.connect(referrer).callStatic.collectReferrerFeesMultiple(tokenAddresses)
       expect(amounts).to.be.an('array').with.length(2)
     })
   })

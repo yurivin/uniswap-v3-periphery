@@ -8,7 +8,7 @@ exports[`NonfungiblePositionManager #collect gas transfers token0 only 1`] = `11
 
 exports[`NonfungiblePositionManager #collect gas transfers token1 only 1`] = `112104`;
 
-exports[`NonfungiblePositionManager #createAndInitializePoolIfNecessary gas 1`] = `4612043`;
+exports[`NonfungiblePositionManager #createAndInitializePoolIfNecessary gas 1`] = `4613471`;
 
 exports[`NonfungiblePositionManager #decreaseLiquidity gas complete decrease 1`] = `148666`;
 
@@ -30,12 +30,12 @@ exports[`NonfungiblePositionManager #permit owned by eoa gas 1`] = `64492`;
 
 exports[`NonfungiblePositionManager #permit owned by verifying contract gas 1`] = `68289`;
 
-exports[`NonfungiblePositionManager #positions gas 1`] = `19890`;
+exports[`NonfungiblePositionManager #positions gas 1`] = `19984`;
 
 exports[`NonfungiblePositionManager #transferFrom gas 1`] = `109691`;
 
 exports[`NonfungiblePositionManager #transferFrom gas comes from approved 1`] = `108291`;
 
-exports[`NonfungiblePositionManager bytecode size 1`] = `24450`;
+exports[`NonfungiblePositionManager bytecode size 1`] = `24448`;
 
 exports[`NonfungiblePositionManager multicall exit gas 1`] = `228718`;
